@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 本地环境与密钥
+.env
+
+# 运行时数据（示例数据除外）
+data/memory/*.jsonl
+data/telemetry/*.jsonl
+data/quotes/*.csv
+data/uploads/*
+!data/quotes/.gitkeep
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>跨境物流引擎</title>
+  <link rel="stylesheet" href="/ui/style.css?v={{V}}" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      跨境物流引擎
+      <span>海关数据 + 承运商资源 · 清关时效 · 多承运商比价</span>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button class="tab-btn active" data-tab="chat">对话</button>
+      <button class="tab-btn" data-tab="quote">比价</button>
+      <button class="tab-btn" data-tab="clearance">清关</button>
+      <button class="tab-btn" data-tab="compliance">合规</button>
+      <button class="tab-btn" data-tab="plan">方案</button>
+      <button class="tab-btn" data-tab="debug">调试</button>
+      <button class="tab-btn" data-tab="config">配置</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- 对话 -->
+    <section class="tab active" id="tab-chat">
+      <div class="card">
+        <h2>多智能体对话</h2>
+        <div class="hint">主控按规则路由到 比价 / 清关 / 合规 / 方案 / 总结 智能体。试试：<code>300kg 家具，尺寸 120x80x60cm，货值 30000 元，发德国，要海运拼柜</code></div>
+        <div class="messages" id="messages"></div>
+        <div class="actions">
+          <textarea id="chat-input" rows="2" placeholder="描述货物与目的国，例如：20kg 服装，尺寸 50x40x30cm，货值 5000 元，发德国，比一下价"></textarea>
+        </div>
+        <div class="actions">
+          <button class="primary" id="chat-send">发送</button>
+          <button class="ghost" id="chat-reset">重置会话</button>
+          <span class="hint" id="session-label"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 比价 -->
+    <section class="tab" id="tab-quote">
+      <div class="card">
+        <h2>多承运商比价</h2>
+        <div class="grid">
+          <label class="field">目的国
+            <select id="q-country">
+              <option value="US">美国</option><option value="DE">德国</option><option value="GB">英国</option>
+              <option value="FR">法国</option><option value="NL">荷兰</option><option value="IT">意大利</option>
+              <option value="ES">西班牙</option><option value="JP">日本</option><option value="SG">新加坡</option>
+              <option value="AU">澳大利亚</option><option value="CA">加拿大</option>
+            </select>
+          </label>
+          <label class="field">运输方式
+            <select id="q-mode">
+              <option value="">不限</option>
+              <option value="express">国际快递</option>
+              <option value="air">空运</option>
+              <option value="lcl">海运拼柜</option>
+              <option value="fcl">海运整柜</option>
+              <option value="rail">铁路</option>
+            </select>
+          </label>
+          <label class="field">总重量 (kg)<input id="q-weight" type="number" value="20" min="0.1" step="0.1" /></label>
+          <label class="field">件数<input id="q-pieces" type="number" value="1" min="1" step="1" /></label>
+          <label class="field">单件长 (cm)<input id="q-len" type="number" value="50" min="0" /></label>
+          <label class="field">单件宽 (cm)<input id="q-wid" type="number" value="40" min="0" /></label>
+          <label class="field">单件高 (cm)<input id="q-hei" type="number" value="30" min="0" /></label>
+          <label class="field">申报货值 (元)<input id="q-value" type="number" value="5000" min="0" /></label>
+          <label class="field">HS 编码（可空）<input id="q-hs" placeholder="如 6109100010" /></label>
+          <label class="field">偏好
+            <select id="q-prefer">
+              <option value="balance">综合最优</option>
+              <option value="cheapest">最便宜</option>
+              <option value="fastest">最快</option>
+            </select>
+          </label>
+        </div>
+        <div class="actions">
+          <button class="primary" id="q-run">开始比价</button>
+          <span class="hint">总成本 = 运费 + 关税 + 进口增值税 + 代理清关预估（不自营清关时）；时效含清关与尾程</span>
+        </div>
+      </div>
+      <div class="card"><h2>结果</h2><div id="q-result"><div class="hint">尚未比价</div></div></div>
+    </section>
+
+    <!-- 清关 -->
+    <section class="tab" id="tab-clearance">
+      <div class="card">
+        <h2>清关时效预估</h2>
+        <div class="grid">
+          <label class="field">目的国
+            <select id="c-country">
+              <option value="US">美国</option><option value="DE" selected>德国</option><option value="GB">英国</option>
+              <option value="FR">法国</option><option value="NL">荷兰</option><option value="IT">意大利</option>
+              <option value="ES">西班牙</option><option value="JP">日本</option><option value="SG">新加坡</option>
+              <option value="AU">澳大利亚</option><option value="CA">加拿大</option>
+            </select>
+          </label>
+          <label class="field">运输方式
+            <select id="c-mode">
+              <option value="express">国际快递</option><option value="air">空运</option>
+              <option value="lcl">海运拼柜</option><option value="fcl">海运整柜</option><option value="rail">铁路</option>
+            </select>
+          </label>
+          <label class="field">HS 编码（可空）<input id="c-hs" placeholder="如 9503000000" /></label>
+          <label class="field">申报货值 (元)<input id="c-value" type="number" value="5000" min="0" /></label>
+          <label class="field">目的口岸（可空）<input id="c-port" placeholder="如 DEHAM / NLRTM" /></label>
+        </div>
+        <h3>已备单证</h3>
+        <div id="c-docs" class="grid">
+          <label class="field"><span><input type="checkbox" class="c-doc" value="商业发票" checked /> 商业发票</span></label>
+          <label class="field"><span><input type="checkbox" class="c-doc" value="装箱单" checked /> 装箱单</span></label>
+          <label class="field"><span><input type="checkbox" class="c-doc" value="提单" /> 提单/运单</span></label>
+          <label class="field"><span><input type="checkbox" class="c-doc" value="EORI" /> EORI 号</span></label>
+          <label class="field"><span><input type="checkbox" class="c-doc" value="CE" /> CE 声明</span></label>
+          <label class="field"><span><input type="checkbox" class="c-doc" value="FDA" /> FDA 备案</span></label>
+        </div>
+        <div class="actions">
+          <button class="primary" id="c-run">估算清关时效</button>
+        </div>
+      </div>
+      <div class="card"><h2>结果</h2><div id="c-result"><div class="hint">尚未估算</div></div></div>
+    </section>
+
+    <!-- 合规 -->
+    <section class="tab" id="tab-compliance">
+      <div class="card">
+        <h2>HS 归类与税费测算</h2>
+        <div class="grid">
+          <label class="field">品名关键词<input id="k-keyword" placeholder="如 服装 / 玩具 / 锂电池" /></label>
+          <label class="field">HS 编码（可空）<input id="k-hs" placeholder="如 8517130000" /></label>
+          <label class="field">目的国
+            <select id="k-country">
+              <option value="US">美国</option><option value="DE" selected>德国</option><option value="GB">英国</option>
+              <option value="FR">法国</option><option value="NL">荷兰</option><option value="IT">意大利</option>
+              <option value="ES">西班牙</option><option value="JP">日本</option><option value="SG">新加坡</option>
+              <option value="AU">澳大利亚</option><option value="CA">加拿大</option>
+            </select>
+          </label>
+          <label class="field">申报货值 (元)<input id="k-value" type="number" value="10000" min="0" /></label>
+        </div>
+        <div class="actions">
+          <button class="primary" id="k-run">查询归类</button>
+          <span class="hint">先匹配 HS，再按目的国计算关税与增值税</span>
+        </div>
+      </div>
+      <div class="card"><h2>结果</h2><div id="k-result"><div class="hint">尚未查询</div></div></div>
+    </section>
+
+    <!-- 方案 -->
+    <section class="tab" id="tab-plan">
+      <div class="card">
+        <h2>全链路方案</h2>
+        <div class="grid">
+          <label class="field">目的国
+            <select id="p-country">
+              <option value="US">美国</option><option value="DE" selected>德国</option><option value="GB">英国</option>
+              <option value="FR">法国</option><option value="NL">荷兰</option><option value="IT">意大利</option>
+              <option value="ES">西班牙</option><option value="JP">日本</option><option value="SG">新加坡</option>
+              <option value="AU">澳大利亚</option><option value="CA">加拿大</option>
+            </select>
+          </label>
+          <label class="field">运输方式
+            <select id="p-mode">
+              <option value="">不限</option><option value="express">国际快递</option>
+              <option value="air">空运</option><option value="lcl">海运拼柜</option>
+              <option value="fcl">海运整柜</option><option value="rail">铁路</option>
+            </select>
+          </label>
+          <label class="field">总重量 (kg)<input id="p-weight" type="number" value="300" min="0.1" /></label>
+          <label class="field">件数<input id="p-pieces" type="number" value="10" min="1" /></label>
+          <label class="field">单件长 (cm)<input id="p-len" type="number" value="120" /></label>
+          <label class="field">单件宽 (cm)<input id="p-wid" type="number" value="80" /></label>
+          <label class="field">单件高 (cm)<input id="p-hei" type="number" value="60" /></label>
+          <label class="field">申报货值 (元)<input id="p-value" type="number" value="30000" min="0" /></label>
+          <label class="field">HS 编码（可空）<input id="p-hs" placeholder="如 9403600000" /></label>
+          <label class="field">偏好
+            <select id="p-prefer">
+              <option value="balance">综合最优</option><option value="cheapest">最便宜</option><option value="fastest">最快</option>
+            </select>
+          </label>
+        </div>
+        <div class="actions"><button class="primary" id="p-run">生成方案</button></div>
+      </div>
+      <div class="card"><h2>结果</h2><div id="p-result"><div class="hint">尚未生成</div></div></div>
+    </section>
+
+    <!-- 调试 -->
+    <section class="tab" id="tab-debug">
+      <div class="card">
+        <h2>运行概览</h2>
+        <div class="stat-row" id="d-stats"><div class="hint">加载中…</div></div>
+        <div class="actions"><button class="ghost" id="d-refresh">刷新</button></div>
+      </div>
+      <div class="card">
+        <h2>最近一次调用的 trace</h2>
+        <div id="d-trace"><div class="hint">还没有调用</div></div>
+      </div>
+      <div class="card">
+        <h2>遥测尾部</h2>
+        <pre class="output" id="d-tail">加载中…</pre>
+      </div>
+      <div class="card">
+        <h2>已导出报价</h2>
+        <div id="d-quotes"><div class="hint">暂无</div></div>
+      </div>
+    </section>
+
+    <!-- 配置 -->
+    <section class="tab" id="tab-config">
+      <div class="card">
+        <h2>模型与约束</h2>
+        <div class="grid">
+          <label class="field">模型 ID<input id="cfg-model" /></label>
+          <label class="field">接口地址<input id="cfg-base" /></label>
+          <label class="field">API Key<input id="cfg-key" disabled placeholder="在 .env 中配置，界面不回显" /></label>
+          <label class="field">权限模式
+            <select id="cfg-perm">
+              <option value="plan">plan（写操作需确认）</option>
+              <option value="auto">auto</option>
+              <option value="readonly">readonly</option>
+            </select>
+          </label>
+          <label class="field">网络策略
+            <select id="cfg-net">
+              <option value="allowlist">allowlist</option><option value="block">block</option>
+            </select>
+          </label>
+          <label class="field">单会话工具预算<input id="cfg-limit" type="number" min="1" /></label>
+        </div>
+        <div class="actions">
+          <button class="primary" id="cfg-save">保存到 .env</button>
+          <span class="hint">保存后需重启服务生效；API Key 只能在 .env 中修改</span>
+        </div>
+      </div>
+      <div class="card">
+        <h2>数据口径</h2>
+        <div class="hint">
+          税率、运价与清关时效均为内置演示基线（<code>data/knowledge/*.json</code>），
+          不联网、不含真实承运商协议价。正式使用前请替换为官方税则与企业协议价卡。
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+  <script src="/ui/app.js?v={{V}}"></script>
+</body>
+</html>

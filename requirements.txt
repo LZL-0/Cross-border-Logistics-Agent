@@ -1,0 +1,7 @@
+# 运行环境依赖（Python 3.11+）
+fastapi>=0.110.0
+uvicorn>=0.29.0
+pydantic>=2.5.0
+python-dotenv>=1.0.0
+python-multipart>=0.0.9   # /api/upload 表单上传所需
+openai>=1.30.0      # 可选：仅配置 LLM_API_KEY 时使用，兼容 DeepSeek / 通义

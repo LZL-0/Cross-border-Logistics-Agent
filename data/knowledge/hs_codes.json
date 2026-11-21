@@ -1,0 +1,138 @@
+{
+  "_meta": {
+    "note": "演示用 HS 归类与税率基线，仅覆盖常见出口品类。税率按目的国简化，实际以官方税则为准。",
+    "risk_levels": ["low", "medium", "high"]
+  },
+  "items": [
+    {
+      "hs": "8517130000",
+      "name": "智能手机",
+      "keywords": ["手机", "智能手机", "smartphone", "phone", "mobile", "手机壳套装"],
+      "duty": {"US": 0.0, "CA": 0.0, "DE": 0.0, "FR": 0.0, "NL": 0.0, "IT": 0.0, "ES": 0.0, "GB": 0.0, "JP": 0.0, "SG": 0.0, "AU": 0.0},
+      "certs": ["CE", "FCC", "UN38.3（锂电池）", "MSDS"],
+      "risk": "medium",
+      "dg": true,
+      "notes": "含锂电池，空运须 UN38.3 报告 + MSDS，部分承运商只接受带电专线"
+    },
+    {
+      "hs": "8471300000",
+      "name": "笔记本电脑 / 平板",
+      "keywords": ["电脑", "笔记本", "平板", "laptop", "notebook", "tablet", "macbook"],
+      "duty": {"US": 0.0, "CA": 0.0, "DE": 0.0, "FR": 0.0, "NL": 0.0, "IT": 0.0, "ES": 0.0, "GB": 0.0, "JP": 0.0, "SG": 0.0, "AU": 0.0},
+      "certs": ["CE", "FCC", "UN38.3（锂电池）"],
+      "risk": "medium",
+      "dg": true,
+      "notes": "高货值，建议按实际价值投保并保留采购发票"
+    },
+    {
+      "hs": "8507600000",
+      "name": "锂离子电池（单独运输）",
+      "keywords": ["电池", "锂电池", "电芯", "battery", "lithium", "power bank", "充电宝"],
+      "duty": {"US": 0.034, "CA": 0.0, "DE": 0.027, "FR": 0.027, "NL": 0.027, "IT": 0.027, "ES": 0.027, "GB": 0.027, "JP": 0.0, "SG": 0.0, "AU": 0.05},
+      "certs": ["UN38.3", "MSDS", "危包证", "空运鉴定报告"],
+      "risk": "high",
+      "dg": true,
+      "notes": "第 9 类危险品，只走货机或海运整柜；多数快递拒收单件大容量电池"
+    },
+    {
+      "hs": "6109100010",
+      "name": "棉制针织 T 恤",
+      "keywords": ["T恤", "t恤", "服装", "上衣", "tshirt", "t-shirt", "apparel", "clothing"],
+      "duty": {"US": 0.165, "CA": 0.18, "DE": 0.12, "FR": 0.12, "NL": 0.12, "IT": 0.12, "ES": 0.12, "GB": 0.12, "JP": 0.084, "SG": 0.0, "AU": 0.05},
+      "certs": ["纤维成分标签", "护理标签"],
+      "risk": "medium",
+      "dg": false,
+      "notes": "美国关税高，可考虑分票或以低税率品类组合申报；勿低报"
+    },
+    {
+      "hs": "6403990000",
+      "name": "运动鞋 / 皮鞋",
+      "keywords": ["鞋", "运动鞋", "球鞋", "sneaker", "shoes", "footwear", "boots"],
+      "duty": {"US": 0.085, "CA": 0.18, "DE": 0.17, "FR": 0.17, "NL": 0.17, "IT": 0.17, "ES": 0.17, "GB": 0.17, "JP": 0.10, "SG": 0.0, "AU": 0.05},
+      "certs": ["材质标签"],
+      "risk": "medium",
+      "dg": false,
+      "notes": "欧盟反倾销关注度高，品牌授权与商标需齐备"
+    },
+    {
+      "hs": "9503000000",
+      "name": "玩具 / 益智模型",
+      "keywords": ["玩具", "积木", "模型", "toy", "toys", "lego", "puzzle"],
+      "duty": {"US": 0.0, "CA": 0.0, "DE": 0.045, "FR": 0.045, "NL": 0.045, "IT": 0.045, "ES": 0.045, "GB": 0.045, "JP": 0.0, "SG": 0.0, "AU": 0.05},
+      "certs": ["CE-EN71", "CPSIA（美国）", "ASTM F963"],
+      "risk": "high",
+      "dg": false,
+      "notes": "欧美玩具法规严格，无 CE/CPSIA 易被扣留销毁"
+    },
+    {
+      "hs": "9403600000",
+      "name": "木制家具",
+      "keywords": ["家具", "木桌", "木椅", "柜子", "furniture", "wooden", "chair", "table"],
+      "duty": {"US": 0.0, "CA": 0.095, "DE": 0.027, "FR": 0.027, "NL": 0.027, "IT": 0.027, "ES": 0.027, "GB": 0.027, "JP": 0.0, "SG": 0.0, "AU": 0.05},
+      "certs": ["熏蒸证明(IPPC)", "原产地证"],
+      "risk": "medium",
+      "dg": false,
+      "notes": "木质包装必须 IPPC 熏蒸；体积重大，海运拼柜更经济"
+    },
+    {
+      "hs": "3304990000",
+      "name": "护肤品 / 化妆品",
+      "keywords": ["化妆品", "护肤", "面霜", "精华", "cosmetics", "skincare", "cream", "serum"],
+      "duty": {"US": 0.0, "CA": 0.06, "DE": 0.065, "FR": 0.065, "NL": 0.065, "IT": 0.065, "ES": 0.065, "GB": 0.065, "JP": 0.0, "SG": 0.0, "AU": 0.05},
+      "certs": ["CPNP（欧盟）", "FDA 备案（美国）", "成分表/MSDS"],
+      "risk": "high",
+      "dg": false,
+      "notes": "成分含酒精/香精致空运受限；欧盟需 CPNP 通报后方可销售"
+    },
+    {
+      "hs": "2106909090",
+      "name": "保健食品 / 膳食补充剂",
+      "keywords": ["保健品", "维生素", "膳食", "supplement", "vitamin", "probiotic"],
+      "duty": {"US": 0.0, "CA": 0.0, "DE": 0.09, "FR": 0.09, "NL": 0.09, "IT": 0.09, "ES": 0.09, "GB": 0.09, "JP": 0.0, "SG": 0.0, "AU": 0.05},
+      "certs": ["FDA 食品注册", "健康声明合规", "原产地证"],
+      "risk": "high",
+      "dg": false,
+      "notes": "多数国家按食品/药品监管，宣称功效易被扣；需提前做准入查询"
+    },
+    {
+      "hs": "4202220000",
+      "name": "手袋 / 箱包",
+      "keywords": ["包", "手袋", "背包", "箱包", "bag", "handbag", "backpack", "luggage"],
+      "duty": {"US": 0.09, "CA": 0.11, "DE": 0.03, "FR": 0.03, "NL": 0.03, "IT": 0.03, "ES": 0.03, "GB": 0.03, "JP": 0.0, "SG": 0.0, "AU": 0.05},
+      "certs": ["材质标签", "品牌授权（涉牌）"],
+      "risk": "medium",
+      "dg": false,
+      "notes": "涉牌货物查验重点，仿牌一律不走"
+    },
+    {
+      "hs": "3926909090",
+      "name": "塑料制品 / 配件",
+      "keywords": ["塑料", "配件", "塑料件", "plastic", "parts", "accessory"],
+      "duty": {"US": 0.0, "CA": 0.065, "DE": 0.065, "FR": 0.065, "NL": 0.065, "IT": 0.065, "ES": 0.065, "GB": 0.065, "JP": 0.0, "SG": 0.0, "AU": 0.05},
+      "certs": ["REACH(SVHC)", "RoHS"],
+      "risk": "low",
+      "dg": false,
+      "notes": "欧盟 REACH 限制物质需提供检测报告"
+    },
+    {
+      "hs": "8544422900",
+      "name": "数据线 / 线缆",
+      "keywords": ["数据线", "线缆", "充电线", "cable", "wire", "usb cable"],
+      "duty": {"US": 0.0, "CA": 0.0, "DE": 0.0, "FR": 0.0, "NL": 0.0, "IT": 0.0, "ES": 0.0, "GB": 0.0, "JP": 0.0, "SG": 0.0, "AU": 0.0},
+      "certs": ["CE", "RoHS", "FCC"],
+      "risk": "low",
+      "dg": false,
+      "notes": "低货值高频次，适合专线小包"
+    },
+    {
+      "hs": "7326909000",
+      "name": "金属结构件 / 五金",
+      "keywords": ["五金", "金属件", "结构件", "hardware", "metal", "bracket"],
+      "duty": {"US": 0.0, "CA": 0.065, "DE": 0.027, "FR": 0.027, "NL": 0.027, "IT": 0.027, "ES": 0.027, "GB": 0.027, "JP": 0.0, "SG": 0.0, "AU": 0.05},
+      "certs": ["材质报告"],
+      "risk": "low",
+      "dg": false,
+      "notes": "重货，按实际重量计费更有利"
+    }
+  ]
+}
