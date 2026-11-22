@@ -23,9 +23,10 @@ def check(level: str, project_id: str | None = None) -> tuple[bool, str]:
     if level not in LEVELS:
         return False, f"未知权限等级：{level}"
     if mode == "readonly":
-        if level == "L0":
-            return True, "readonly：允许公开读取"
-        return False, f"readonly：禁止 {level}（{LEVELS[level]}）"
+        # 只读模式：允许读（L0/L1），仅拒绝写（L2）
+        if level == "L2":
+            return False, f"readonly：禁止 {level}（{LEVELS[level]}）"
+        return True, f"readonly：允许 {level}（{LEVELS[level]}）"
     if mode == "plan" and level == "L2":
         return True, "plan：L2 需调用方 confirm=true"
 
