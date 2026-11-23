@@ -36,6 +36,11 @@ def _env_float(key: str, default: float) -> float:
         return default
 
 
+def _env_bool(key: str, default: bool = True) -> bool:
+    raw = str(os.getenv(key, "1" if default else "0")).strip().lower()
+    return raw in ("1", "true", "yes", "y", "on")
+
+
 # ------------------------- 路径根 -------------------------
 
 ROOT = Path(__file__).resolve().parent
@@ -73,6 +78,36 @@ LLM_API_KEY = _env_str("LLM_API_KEY")
 LLM_BASE_URL = _env_str("LLM_BASE_URL", "https://api.deepseek.com/v1")
 LLM_MODEL = _env_str("LLM_MODEL", "deepseek-chat")
 LLM_TIMEOUT = _env_int("LLM_TIMEOUT", 60)
+LLM_TEMPERATURE = _env_float("LLM_TEMPERATURE", 0.2)
+LLM_MAX_TOKENS = _env_int("LLM_MAX_TOKENS", 1200)
+
+# ------------------------- 实时信息 -------------------------
+
+# 实时取数总开关：关掉后 realtime.* 工具直接返回不可用，行为回到纯离线
+REALTIME_ENABLED = _env_bool("REALTIME_ENABLED", True)
+# 公开检索入口（360 结果页，免 Key；Bing 作兜底）
+SEARCH_BASE_URL = _env_str("SEARCH_BASE_URL", "https://www.so.com/s")
+# 360 资讯搜索（带发布时间的新闻结果，优先于网页结果页）
+SEARCH_NEWS_URL = _env_str("SEARCH_NEWS_URL", "https://news.so.com/ns")
+SEARCH_FALLBACK_URL = _env_str("SEARCH_FALLBACK_URL", "https://cn.bing.com/search")
+# 引擎顺序：news（360 资讯）/ so（360 网页）/ bing，逗号分隔，并发跑、按相关度合并
+SEARCH_ENGINE = _env_str("SEARCH_ENGINE", "news,so,bing")
+# 实时汇率入口（open.er-api.com，日更，免 Key）
+FX_BASE_URL = _env_str("FX_BASE_URL", "https://open.er-api.com/v6/latest")
+# 上海航运交易所 SCFI 运价指数页
+SCFI_URL = _env_str("SCFI_URL", "https://www.sse.net.cn/index/singleIndex?indexType=scfi")
+REALTIME_TIMEOUT = _env_int("REALTIME_TIMEOUT", 15)
+REALTIME_CACHE_TTL = _env_int("REALTIME_CACHE_TTL", 180)
+REALTIME_MAX_RESULTS = _env_int("REALTIME_MAX_RESULTS", 5)
+# 单页正文最多抽取多少字（控制上下文与 token）
+FETCH_MAX_CHARS = _env_int("FETCH_MAX_CHARS", 3000)
+# 板块级实时快照的缓存秒数与每条话题最多保留几条资讯
+LIVE_TTL = _env_int("LIVE_TTL", 300)
+LIVE_NEWS_LIMIT = _env_int("LIVE_NEWS_LIMIT", 3)
+# 知识库周更：是否自动生成周报、每周几（0=周一…4=周五）、几点之后触发
+KB_SYNC_ENABLED = _env_bool("KB_SYNC_ENABLED", True)
+KB_SYNC_WEEKDAY = _env_int("KB_SYNC_WEEKDAY", 4)
+KB_SYNC_HOUR = _env_int("KB_SYNC_HOUR", 18)
 
 # ------------------------- 权限与约束 -------------------------
 
@@ -89,7 +124,7 @@ TOOL_PATH_ROOTS = tuple(
 ) or (ROOT,)
 
 MAX_TOOL_CALLS = _env_int("MAX_TOOL_CALLS", 12)
-REACT_MAX_ROUNDS = _env_int("REACT_MAX_ROUNDS", 4)
+REACT_MAX_ROUNDS = _env_int("REACT_MAX_ROUNDS", 6)
 CONTEXT_CHAR_BUDGET = _env_int("CONTEXT_CHAR_BUDGET", 6000)
 
 # ------------------------- 业务基线 -------------------------

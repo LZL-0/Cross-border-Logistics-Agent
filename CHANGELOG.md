@@ -1,5 +1,85 @@
 # CHANGELOG
 
+## 20261123（接入 DeepSeek + 实时取数）
+
+### 新增
+- **模型接入**：`.env` 填 `LLM_API_KEY` 即走 DeepSeek（`openai` 兼容接口），
+  新增 `LLM_TEMPERATURE` / `LLM_MAX_TOKENS` 两个可调项；`openai` 已装进 `.venv`。
+- **实时取数工具**（`logistics_agent/tools/realtime.py`，4 个）：
+  - `realtime.web_search`：联网检索最新公开信息（360 结果页为主，Bing RSS 兜底），
+    解析 `data-mdurl` 取真实目标地址，跳过广告位与跳转链；
+  - `realtime.fetch_page`：抓网页正文转纯文本（去脚本/样式、压空白、限长）；
+  - `realtime.scfi_index`：上海航运交易所 SCFI 综合指数（上期/本期/涨跌/涨跌幅/期次日期）；
+  - `realtime.fx_rate`：open.er-api 日更汇率（带更新时刻）。
+- **调度与提示词**：四个业务角色均可调用实时工具；系统提示里写明今天日期、
+  参数名必须与函数签名一致、涉及时效性数据必须先取数并标注「取数时间 + 来源」。
+- **可观测与自检**：新增 `/api/realtime/{search, fetch, fx, scfi, health}`；
+  「配置」页新增 **实时接入** 卡片，一键检测模型 / 检索 / 汇率 / SCFI 四段链路。
+- **配置项**：`REALTIME_ENABLED`、`SEARCH_BASE_URL`、`SEARCH_FALLBACK_URL`、`SEARCH_ENGINE`、
+  `FX_BASE_URL`、`SCFI_URL`、`REALTIME_TIMEOUT`、`REALTIME_CACHE_TTL`、`REALTIME_MAX_RESULTS`、
+  `FETCH_MAX_CHARS`；`/api/config` 可写，Key 只报名「是否已配置」不回显。
+
+### 变更
+- `REACT_MAX_ROUNDS` 默认 4 → 6；工具清单改为「名称(参数: 类型)」签名形式，
+  修掉模型自创参数名导致的连续失败（`lookup_hs(query=...)`、`duty_calc(value=...)`）。
+- 网络白名单支持 `*` / `*.x.com` / `.x.com` 通配；`NET_TOOLS` 由空集改为实时工具集合。
+- `.env.example` 同步新增全部实时项，默认 `TOOL_NET_ALLOWLIST=*`（收紧方式见 README）。
+
+### 安全
+- realtime 模块自带 SSRF 防线：仅 http/https、DNS 解析后拦内网/回环/链路本地/保留地址、
+  重定向逐跳复检、响应体 ≤2MB、超时与缓存可配；403/404/证书异常给出可读提示。
+
+### 板块实时化（同日第二轮）
+- **新增 `logistics_agent/core/live_feed.py`**：`market()`（SCFI + 汇率并发、磁盘兜底）、
+  `news()`（检索 + RSS 双通道、跑题过滤、去重）、`panel()` / `safe_panel()`（按板块出快照）。
+- **四个业务工具注入 `live`**：`rates.compare_rates`（比价）、`clearance.estimate_clearance`（清关）、
+  `knowledge.duty_calc`（合规/税费）、`shipment.plan_shipment`（方案）；只有 `compare()` 层面注入，
+  各承运商单次估算不加，避免网络放大。
+- **前端**：`ui/index.html` 顶部全局行情条（SCFI / USD-CNY / 更新时间 / 刷新），
+  `ui/app.js` 新增 `renderLive()` 与四处接入、`refreshMarket()` 定时刷新（5 分钟），
+  `ui/style.css` 新增 `.live-strip` / `.live-chip` / `.live-block` 样式。
+- **接口**：新增 `/api/realtime/market`（`force` 跳过缓存）、`/api/realtime/news`；
+  服务启动时后台预热行情，避免首屏等 10s。
+- **检索鲁棒性**：360 单引擎 6s 上限、Bing 5s；检索结果先按物流语义过滤（剔除百科/维基/
+  站点首页/外交部国家概况），不足 2 条时用 `ennews` RSS 按关键词补位；板块资讯整体 8s 预算。
+- **新增配置**：`LIVE_TTL`(300s)、`LIVE_NEWS_LIMIT`(3×2 条)；行情兜底缓存落
+  `data/telemetry/market_cache.json`。
+
+### 知识库周更（同日第三轮）
+- **新增 `logistics_agent/core/kb_sync.py`**：`build_proposal()` 生成周报（行情基线 + 口岸时效候选），
+  `apply_latest(confirm=True)` 备份后落盘，`start_scheduler()` 每周定时生成（只生成不改表）。
+- **范围与口径**：
+  - 行情基线写 `data/knowledge/market_baseline.json`（SCFI + 主要货币汇率），
+    并作为 `live_feed.market()` 的二级兜底（实时源与 market_cache 都失效时仍显示上周值并标 stale）；
+  - 口岸只盯当周拥堵最重的前 5 个，标题须命中口岸名、排除多港口横向对比稿、排除发布 >120 天的旧文，
+    单次最多 ±0.3 天（0.5–8 区间）；无明确信号不改表。
+- **人工确认链路**：`POST /api/kb/run` → `GET /api/kb/proposal` → `POST /api/kb/apply?confirm=true`；
+  新增 `GET /api/kb/history`；配置页新增「知识库周更」卡片（生成 / 确认写入）。
+- **产物与备份**：`data/knowledge/weekly/<stamp>.json|.md` + `latest.json`；每次写入前备份到
+  `data/knowledge/_backup/<时间戳>/`；落盘后自动清知识库 `lru_cache`，无需重启生效。
+- **新增配置**：`KB_SYNC_ENABLED`、`KB_SYNC_WEEKDAY`(4=周五)、`KB_SYNC_HOUR`(18)。
+- **无服务场景**：`scripts/kb_weekly.py` + `scripts/kb_weekly.bat`（只生成周报，日志落
+  `data/knowledge/weekly/_task.log`），可挂 Windows 计划任务每周跑一次。
+- **不做**：税率表、HS 归类、承运商条款不自动更新（公开源无可核实结构化数据）。
+
+### 检索重构（同日第四轮）
+- **新增资讯引擎**：`SEARCH_NEWS_URL=https://news.so.com/ns`，解析 `li.res-list` 的 `data-url` /
+  `h3` / `p.summary` / `span.time`，拿真实地址 + 摘要 + 发布时间；`SEARCH_ENGINE` 默认改为 `news,so,bing`。
+- **并发与预算**：多引擎同时跑、整体 8s（news/so 6s、bing 5s）；某家已给足候选即提前返回，不等慢引擎；
+  只有异常/超时才进 90s 冷却，返回噪声不冷却（避免一次风控把后续查询全拖死）。
+- **打分与去重**：关键词覆盖率 0.55 + 标题命中 0.25 + 权威域名 0.2，叠加新鲜度（30 天内 +0.12、
+  120 天内 +0.04、一年内 -0.3、更旧 -0.5）；低于 0.2 丢弃；URL + 标题前 30 字去重；
+  `_tokens` 去泛词/纯数字、长句只取最长 4 段，命中按 2–3 个词就封顶，避免长句全灭。
+- **过滤收紧**：`live_feed._is_junk` 要求**标题**含行业词（英文另有词表），把「午盘播报」「交易大百科」
+  这类借摘要混进来的泛内容挡掉；RSS 补位门槛改为 token ≥4 才需 2 个命中。
+- **降级可观测**：`/api/realtime/search` 响应新增 `tokens`、`engine`（实际供数引擎），每条结果带
+  `score` / `host` / `published`；失败时错误串写明「已过滤 N 条跑题结果」与各引擎状态。
+- **超时收紧**：汇率与行情两路各自 8s 上限，超时用 `market_cache.json` 上次成功值兜底；
+  板块快照实测比价 0.8–1.4s、清关 1.2s、合规 0.9–1.8s、方案 0.8s。
+- **提示词**：实时提示加「检索词用中文短关键词（3–5 段），不要整句英文或长句，查不到就换短说法再试一次」。
+
+---
+
 ## 20261121（首版）
 
 ### 新增

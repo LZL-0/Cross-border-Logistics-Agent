@@ -191,7 +191,7 @@ def estimate_clearance(
     """估算目的国清关时效区间，并给出影响因素分解与风险清单。"""
     if isinstance(docs_provided, str):
         docs_provided = [x.strip() for x in docs_provided.replace("，", ",").split(",") if x.strip()]
-    return estimate(
+    result = estimate(
         country=country,
         mode=mode,
         hs=hs,
@@ -200,6 +200,16 @@ def estimate_clearance(
         port=port,
         declared_value=declared_value,
     )
+    # 口岸/查验实时动态（取不到就降级）
+    from logistics_agent.core.live_feed import safe_panel
+
+    result["live"] = safe_panel(
+        "clearance",
+        country_name=result.get("country_name", ""),
+        mode_name=result.get("mode_name", ""),
+        port_name=port,
+    )
+    return result
 
 
 @register(roles=["clearance", "plan"], name="clearance.port_status")

@@ -1,0 +1,29 @@
+{
+  "_meta": {
+    "note": "每周更新的行情基线；实时源不可用时由 live_feed 兜底引用，口径以当期官网为准。",
+    "updated_at": "2026-11-23 22:25:02",
+    "source": "weekly kb_sync"
+  },
+  "as_of": "2026-11-23 22:24:56",
+  "scfi": {
+    "value": 3503.78,
+    "period": "2026-11-20",
+    "previous": 3572.33,
+    "change": -68.55,
+    "change_pct": -1.92,
+    "trend": "下跌",
+    "source": "https://www.sse.net.cn/index/singleIndex?indexType=scfi"
+  },
+  "fx": {
+    "base": "USD",
+    "rates": {
+      "CNY": 6.681345,
+      "EUR": 0.911134,
+      "JPY": 158.701406,
+      "GBP": 0.763577,
+      "HKD": 7.838987
+    },
+    "updated_utc": "Mon, 23 Nov 2026 00:02:32 +0000",
+    "source": "open.er-api.com"
+  }
+}

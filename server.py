@@ -6,6 +6,7 @@
 """
 
 import json
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, File, UploadFile
@@ -18,10 +19,16 @@ from config import (
     AGENT_PERMISSION_MODE,
     LLM_API_KEY,
     LLM_BASE_URL,
+    LLM_MAX_TOKENS,
     LLM_MODEL,
+    LLM_TEMPERATURE,
     MAX_TOOL_CALLS,
     PATHS,
+    REALTIME_ENABLED,
+    REALTIME_TIMEOUT,
     ROOT,
+    SEARCH_BASE_URL,
+    FX_BASE_URL,
     TOOL_NET_ALLOWLIST,
     TOOL_NET_POLICY,
 )
@@ -33,6 +40,7 @@ from logistics_agent.tools.catalog import quote_rows
 from logistics_agent.tools.clearance import estimate_clearance, port_status
 from logistics_agent.tools.knowledge import lookup_country, match_hs_candidates
 from logistics_agent.tools.rates import compare_rates, list_carriers
+from logistics_agent.tools.realtime import fetch_page, fx_rate, scfi_index, search_web
 from logistics_agent.tools.shipment import export_quote, plan_shipment
 
 VERSION = "20261121"
@@ -204,11 +212,152 @@ async def upload(file: UploadFile = File(...)) -> dict:
     return {"ok": True, "filename": name, "size": len(content)}
 
 
+# ------------------------- 实时接入 -------------------------
+
+
+@app.get("/api/realtime/search")
+def api_realtime_search(q: str, top_k: int = 5) -> dict:
+    """联网检索（Bing RSS）：调试与前端验证用。"""
+    return _guard(search_web, query=q, top_k=top_k)
+
+
+@app.get("/api/realtime/fx")
+def api_realtime_fx(base: str = "USD", symbols: str = "CNY,EUR,JPY,GBP,HKD,AUD") -> dict:
+    """实时汇率（日更，带更新时刻）。"""
+    return _guard(fx_rate, base=base, symbols=symbols)
+
+
+@app.get("/api/realtime/fetch")
+def api_realtime_fetch(url: str, max_chars: int = 0) -> dict:
+    """抓取网页正文（纯文本摘要）。"""
+    return _guard(fetch_page, url=url, max_chars=max_chars)
+
+
+@app.get("/api/realtime/scfi")
+def api_realtime_scfi() -> dict:
+    """SCFI 上海出口集装箱运价指数（最新一期综合指数）。"""
+    return _guard(scfi_index)
+
+
+@app.get("/api/realtime/market")
+def api_realtime_market(force: bool = False) -> dict:
+    """看板顶栏行情：SCFI + 主要货币汇率（板块快照共用同一份缓存）。"""
+    from logistics_agent.core.live_feed import market
+
+    return _guard(market, force=force)
+
+
+@app.get("/api/realtime/news")
+def api_realtime_news(q: str, limit: int = 3) -> dict:
+    """按关键词并发检索资讯，返回去重后的条目（前端「实时参考」区块用）。"""
+    from logistics_agent.core.live_feed import news
+
+    return _guard(news, queries=[q], limit=limit)
+
+
+# ------------------------- 知识库周更 -----------------
+
+
+@app.post("/api/kb/run")
+def api_kb_run() -> dict:
+    """立即生成本周候选更新（只写 weekly/ 周报，不改知识库本体）。"""
+    from logistics_agent.core.kb_sync import build_proposal
+
+    return _guard(build_proposal, trigger="manual")
+
+
+@app.get("/api/kb/proposal")
+def api_kb_proposal() -> dict:
+    """查看最新周报（行情候选 + 口岸时效候选 + 报告路径）。"""
+    from logistics_agent.core.kb_sync import latest_proposal
+
+    data = latest_proposal()
+    if not data:
+        return {"ok": False, "error": "还没有周报，先调用 POST /api/kb/run", "data": None}
+    return {"ok": True, "data": data}
+
+
+@app.get("/api/kb/history")
+def api_kb_history(limit: int = 12) -> dict:
+    from logistics_agent.core.kb_sync import history
+
+    return {"ok": True, "data": history(limit)}
+
+
+@app.post("/api/kb/apply")
+def api_kb_apply(confirm: bool = False) -> dict:
+    """确认写入：备份后覆盖 ports.json 的 congestion_days 与 market_baseline.json。"""
+    from logistics_agent.core.kb_sync import apply_latest
+
+    result = apply_latest(confirm=confirm)
+    if not result.get("ok"):
+        return {"ok": False, "error": result.get("error", "写入失败")}
+    return {"ok": True, "data": result}
+
+
+def _probe(name: str, fn) -> dict:
+    started = time.time()
+    try:
+        payload = fn()
+        return {
+            "ok": True,
+            "latency_ms": int((time.time() - started) * 1000),
+            "detail": payload,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "latency_ms": int((time.time() - started) * 1000),
+            "error": f"{type(exc).__name__}: {exc}"[:240],
+        }
+
+
+@app.get("/api/realtime/health")
+def api_realtime_health(probe_llm: bool = True) -> dict:
+    """三段健康检查：模型、检索、汇率。前端「实时接入」卡片直接展示。"""
+    now = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
+    def llm_check():
+        if not LLM_API_KEY:
+            raise RuntimeError("未配置 LLM_API_KEY（当前走规则兜底）")
+        from openai import OpenAI
+
+        client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_BASE_URL, timeout=min(REALTIME_TIMEOUT, 20))
+        resp = client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[{"role": "user", "content": "ping"}],
+            max_tokens=8,
+            temperature=0,
+        )
+        return {"model": LLM_MODEL, "base_url": LLM_BASE_URL, "reply": (resp.choices[0].message.content or "")[:40]}
+
+    checks = {
+        "llm": _probe("llm", llm_check) if probe_llm else {"ok": bool(LLM_API_KEY), "skipped": True},
+        "search": _probe("search", lambda: search_web("跨境物流 运价", 2)),
+        "fx": _probe("fx", lambda: fx_rate("USD", "CNY")),
+        "scfi": _probe("scfi", scfi_index),
+    }
+    result = {
+        "time": now,
+        "realtime_enabled": REALTIME_ENABLED,
+        "net_policy": TOOL_NET_POLICY,
+        "allowlist": list(TOOL_NET_ALLOWLIST),
+        "sources": {"search": SEARCH_BASE_URL, "fx": FX_BASE_URL, "llm": LLM_BASE_URL},
+        "checks": checks,
+    }
+    live.log("realtime_health", ok={k: v.get("ok") for k, v in checks.items()})
+    return result
+
+
 # ------------------------- 配置读写 -------------------------
 
 ENV_WRITABLE = (
+    "LLM_API_KEY",
     "LLM_MODEL",
     "LLM_BASE_URL",
+    "LLM_TEMPERATURE",
+    "REALTIME_ENABLED",
+    "SEARCH_BASE_URL",
     "AGENT_PERMISSION_MODE",
     "TOOL_NET_POLICY",
     "TOOL_NET_ALLOWLIST",
@@ -227,7 +376,11 @@ def read_config() -> dict:
         "env": {
             "LLM_MODEL": LLM_MODEL,
             "LLM_BASE_URL": LLM_BASE_URL,
+            "LLM_TEMPERATURE": str(LLM_TEMPERATURE),
+            "LLM_MAX_TOKENS": str(LLM_MAX_TOKENS),
             "LLM_API_KEY_SET": bool(LLM_API_KEY),
+            "REALTIME_ENABLED": "1" if REALTIME_ENABLED else "0",
+            "SEARCH_BASE_URL": SEARCH_BASE_URL,
             "AGENT_PERMISSION_MODE": AGENT_PERMISSION_MODE,
             "TOOL_NET_POLICY": TOOL_NET_POLICY,
             "TOOL_NET_ALLOWLIST": ",".join(TOOL_NET_ALLOWLIST),
@@ -284,6 +437,21 @@ def debug_tail(n: int = 30) -> dict:
         except json.JSONDecodeError:
             continue
     return {"events": events}
+
+
+@app.on_event("startup")
+def _warm_live() -> None:
+    """启动时后台预热行情（SCFI + 汇率）、挂知识库周更定时器。"""
+    from logistics_agent.core.kb_sync import start_scheduler
+
+    start_scheduler()
+    if not REALTIME_ENABLED:
+        return
+    import threading
+
+    from logistics_agent.core.live_feed import market
+
+    threading.Thread(target=lambda: market(force=True), daemon=True).start()
 
 
 @app.get("/", response_class=HTMLResponse)

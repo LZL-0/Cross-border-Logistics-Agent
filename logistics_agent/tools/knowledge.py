@@ -176,6 +176,14 @@ def duty_calc(hs: str = "", country: str = "", declared_value: float = 0, freigh
         raise ValueError(f"未收录的 HS 编码：{hs}")
     result = compute_duty(hs_entry, country_entry, declared_value, freight)
     result["docs"] = required_docs(hs_entry, country_entry)
+    # 关税/认证政策实时动态（取不到就降级，不影响测算）
+    from logistics_agent.core.live_feed import safe_panel
+
+    result["live"] = safe_panel(
+        "compliance",
+        country_name=result.get("country_name", ""),
+        hs=hs,
+    )
     return result
 
 

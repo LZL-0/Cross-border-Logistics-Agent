@@ -439,9 +439,19 @@ def compare_rates(
     """多承运商比价：含税费、清关时效、评分与推荐（cheapest/fastest/best_value）。"""
     if isinstance(docs_provided, str):
         docs_provided = [x.strip() for x in docs_provided.replace("，", ",").split(",") if x.strip()]
-    return compare(
+    result = compare(
         country, weight_kg, length, width, height, mode, pieces, hs, declared_value, docs_provided, prefer
     )
+    # 板块级实时快照：SCFI 指数 + 汇率 + 运价/燃油资讯（取不到就降级，不影响报价）
+    from logistics_agent.core.live_feed import safe_panel
+
+    query = result.get("query", {})
+    result["live"] = safe_panel(
+        "quote",
+        country_name=query.get("country_name", ""),
+        mode_name=query.get("mode", ""),
+    )
+    return result
 
 
 __all__ = ["quote_all", "compare", "list_carriers", "quote_rates", "compare_rates"]

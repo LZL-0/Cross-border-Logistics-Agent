@@ -51,12 +51,22 @@ class Supervisor:
 
     def stats(self) -> dict:
         """聚合看板数据（供 /api/stats 使用）。"""
-        from config import AGENT_PERMISSION_MODE, LLM_MODEL, TOOL_NET_POLICY
+        from config import (
+            AGENT_PERMISSION_MODE,
+            LLM_API_KEY,
+            LLM_MODEL,
+            REALTIME_ENABLED,
+            TOOL_NET_POLICY,
+            SEARCH_BASE_URL,
+            FX_BASE_URL,
+        )
         from logistics_agent.core.constraint import budget
+        from logistics_agent.core.dispatch.registry import GLOBAL_REGISTRY
         from logistics_agent.tools.catalog import quote_rows
         from logistics_agent.tools.knowledge import carriers_data, countries, hs_items, ports_data
 
         rows = quote_rows()
+        realtime_tools = [n for n in GLOBAL_REGISTRY.names() if n.startswith("realtime.")]
         return {
             "knowledge": {
                 "countries": len(countries()),
@@ -67,8 +77,16 @@ class Supervisor:
             "quotes": {"total": len(rows), "recent": rows[-3:]},
             "budget": budget.snapshot(),
             "model": LLM_MODEL or "未配置（走规则兜底）",
+            "llm_key_set": bool(LLM_API_KEY),
             "permission_mode": AGENT_PERMISSION_MODE,
             "net_policy": TOOL_NET_POLICY,
+            "realtime": {
+                "enabled": REALTIME_ENABLED,
+                "tools": realtime_tools,
+                "search": SEARCH_BASE_URL,
+                "fx": FX_BASE_URL,
+            },
+            "tools_total": len(GLOBAL_REGISTRY.names()),
         }
 
 

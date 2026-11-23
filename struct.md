@@ -4,7 +4,7 @@
 
 ## 1. 一句话架构
 
-**FastAPI 接入层 → Supervisor 规则路由 → 领域智能体（ReAct + classic 兜底）→ 12 个注册工具 → JSON 知识库 + 规则引擎 → 格式化输出 + 落盘/遥测**。
+**FastAPI 接入层 → Supervisor 规则路由 → 领域智能体（ReAct + classic 兜底）→ 16 个注册工具 → JSON 知识库 + 规则引擎 + 实时取数 → 格式化输出 + 落盘/遥测**。
 
 分层目的：把「理解问题」「决定调什么」「怎么算」「怎么防越权」拆开，任何一层都可以单独替换或扩展：
 
@@ -34,15 +34,18 @@ logistics_agent/
 │  ├─ constraint/rules.py        DEAD_RULES：禁止编造运价/税率、禁止承诺时效、禁止协助低报
 │  ├─ reflection/               reflect()：回答与 trace 的一致性/风险自检
 │  ├─ telemetry/live.py         工具/思考/错误事件 → data/telemetry/live.jsonl
+│  ├─ live_feed.py              板块实时快照：market / news（检索+RSS）/ panel / safe_panel
+│  ├─ kb_sync.py                知识库周更：build_proposal / apply_latest(confirm) / start_scheduler
 │  └─ output/formatter.py       统一返回体 build(answer, trace, agent) / error()
 ├─ memory/                       短期（会话轮次 JSONL）+ 长期（偏好/事实 KB）+ JSONL 落盘
-├─ tools/                        领域能力（12 个工具，见 §4）
+├─ tools/                        领域能力（16 个工具，见 §4）
 │  ├─ knowledge.py               HS 查询、税则查表、目的国信息、compute_duty、required_docs
 │  ├─ clearance.py               estimate()/estimate_clearance()、口岸拥堵、缺失单证与风险
 │  ├─ rates.py                   计费重/W-M/整柜选型、附加费、税费、归一评分、推荐
 │  ├─ shipment.py                plan_shipment()、时间线、export_quote()、quote_stats()
 │  ├─ catalog.py                 报价 CSV 落盘（QUOTE_FIELDS / append_rows / quote_rows）
-│  └─ document.py                parse_document：csv/txt/md 解析为结构化行
+│  ├─ document.py                parse_document：csv/txt/md 解析为结构化行
+│  └─ realtime.py                实时取数：web_search / fetch_page / fx_rate / scfi_index
 ├─ Agents/                       业务智能体（每个都有 classic_<role>_reply 兜底）
 │  ├─ base.py                    ReActAgentBase：领取工具、过闸门、LLM→兜底、记忆、反思
 │  ├─ supervisor.py              规则路由（不持工具、不调 LLM）+ stats()
@@ -52,8 +55,12 @@ logistics_agent/
 │  ├─ compliance_agent.py        HS / 税率 / 认证 / 单证
 │  └─ summarizer.py              统计与复盘（读落盘报价，不依赖 LLM）
 data/knowledge/                  countries.json / hs_codes.json / carriers.json / ports.json
+data/knowledge/weekly/           每周候选更新 <stamp>.json|.md + latest.json（不入库）
+data/knowledge/_backup/          apply 前的 ports.json / market_baseline.json 快照
 data/quotes/quote_log.csv        报价落盘（导出即写一行）
+data/telemetry/live.jsonl        遥测事件；market_cache.json 行情兜底缓存（上次成功值）
 ui/                              index.html + app.js + style.css（原生，无构建链）
+scripts/kb_weekly.py|.bat        无服务时的周更入口（只生成周报，供计划任务调用）
 ```
 
 ## 3. 一次请求的生命周期
@@ -86,6 +93,10 @@ ui/                              index.html + app.js + style.css（原生，无�
 | `shipment.plan_shipment` | ✓ |  |  |  | 端到端方案 |
 | `shipment.export_quote` | ✓ | ✓ |  |  | **写操作**，需 `confirm=true` |
 | `shipment.quote_stats` | ✓ | ✓ |  |  | 历史报价统计 |
+| `realtime.web_search` | ✓ | ✓ | ✓ | ✓ | 联网检索（360 资讯 news.so.com 主 + 360 网页 / Bing 兜底 + RSS 补位，并发打分） |
+| `realtime.fetch_page` | ✓ | ✓ | ✓ | ✓ | 抓网页正文并转纯文本，核实原文 |
+| `realtime.fx_rate` | ✓ | ✓ | ✓ | ✓ | 实时汇率（open.er-api，日更） |
+| `realtime.scfi_index` | ✓ | ✓ | ✓ | ✓ | SCFI 综合运价指数（上海航运交易所） |
 
 写操作集合：`WRITE_TOOLS = DANGEROUS_WRITE = {"shipment.export_quote"}`；
 `AGENT_PERMISSION_MODE=plan` 时必须 `confirm=true`，`readonly` 一律拒绝。
@@ -96,15 +107,19 @@ ui/                              index.html + app.js + style.css（原生，无�
 _execute_tool(name, args)
   ├─ ① GLOBAL_REGISTRY.allows(role, name)      角色越权 → 拒绝（执行级，不只靠提示词）
   ├─ ② check_tool_call(name, args)             权限 L1/L2 → 路径根 → 净网 → 危险写 confirm
-  └─ ③ check_budget(session_id)                会话工具预算（默认 12 次）
+  └─ ③ check_budget(session_id)                会话工具预算（代码默认 12 次，`.env` 现值 100 次）
 ```
 
 - **权限**：`memory/access.check("L1"/"L2")`，写类工具走 L2。
 - **路径**：`validator.check_paths` 递归扫描 `path/file/dir/root/out_path/export_path` 等键，
   拒绝含 `..` 或落在 `TOOL_PATH_ROOTS`（默认项目根）之外的绝对路径。
 - **净网**：`layer._iter_urls` 递归扫描**所有**参数里的 `http(s)` 字符串（不只 `url` 字段），
-  `TOOL_NET_POLICY=allowlist` 时域名必须在 `TOOL_NET_ALLOWLIST`；`block` 一律拒绝。
-  本项目 `NET_TOOLS` 为空集，默认完全离线。
+  `TOOL_NET_POLICY=allowlist` 时域名必须命中 `TOOL_NET_ALLOWLIST`（支持 `*`、`*.x.com`、`.x.com` 通配）；
+  `block` 一律拒绝。当前实时工具在名单内（`NET_TOOLS`），
+  其中 `web_search`/`fx_rate`/`scfi_index` 的地址写死在代码里，`fetch_page` 的 `url` 参数会被本层扫描。
+- **SSRF 兜底**：realtime 模块自己再做一层——只允许 http/https、DNS 解析出的 IP 不得是
+  内网/回环/链路本地/保留地址、重定向逐跳复检、响应体 ≤2MB、超时 `REALTIME_TIMEOUT`。
+  白名单放宽到 `*` 时，这层才是真正的边界。
 - **危险写**：`AGENT_PERMISSION_MODE=plan` 时 `shipment.export_quote` 必须 `confirm=true`。
 - **提示词层**：`DEAD_RULES` 明确「不编造运价/税率、不承诺时效、不协助低报或拆单避税」。
 
@@ -126,9 +141,14 @@ _execute_tool(name, args)
   "excluded": [{"carrier":"燕文物流（小包）","reason":"单件超重 20kg > 2.5kg"}],
   "recommendation": {"carrier":"顺丰国际","landed_total":3479.91,"eta_date":"12-01 ~ 12-06",
                      "score":83.4,"reason":"...","tradeoff":"..."},
-  "tax": {...}, "assumptions": [...]
+  "tax": {...}, "assumptions": [...],
+  "live": {"kind":"quote","as_of":"2026-11-23 21:46:05","market":{"scfi":{...},"fx":{...},"stale":false},
+           "news":[{"topic":"...","title":"...","url":"...","published":"11-23 17:53"}],"errors":[],"disclaimer":"..."}
 }
 ```
+
+`live` 由 `core/live_feed.panel()` 产出，四个板块（quote / clearance / compliance / plan）都有；
+行情两路并发 + 磁盘兜底，资讯检索与 RSS 双通道、8s 预算，关键词跑题内容在入列前过滤。
 
 **清关 `estimate_clearance()` →**
 
@@ -180,4 +200,10 @@ uvicorn server:app --port 8000   # 首页 200、/api/stats、/api/quote、/api/p
 ```
 
 健康检查清单：`/` 返回 200 且 `{{V}}` 已替换；`/api/stats` 知识库计数为 11/13/9/17；
-`/api/quote` 返回 8 家且推荐总成本 = 运费 + 税费 + 代理费；`/api/plan` 时间线末段日期 = `eta_date` 右端。
+`/api/quote` 返回 8 家且推荐总成本 = 运费 + 税费 + 代理费；`/api/plan` 时间线末段日期 = `eta_date` 右端；
+`/api/realtime/market` 返回 `scfi`+`fx` 且 `stale=false`；`/api/quote|plan|clearance|duty` 的返回体
+均带非空 `live`（`news` ≥3 条或含降级说明），首屏行情条与各板块「实时参考」块可渲染。
+
+检索专项：`/api/realtime/search?q=美国%20清关%20关税` 应 `engine=news`、`count≥3`，条目带
+`score/host/published`；`news.so.com` 是主通道，`so.com` 网页结果页被风控时不要当成故障——
+过滤器会丢噪声、由 RSS 补位；`/api/realtime/search` 失败串里能看到「已过滤 N 条跑题结果」。

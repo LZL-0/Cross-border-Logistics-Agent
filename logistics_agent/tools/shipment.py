@@ -135,9 +135,19 @@ def plan_shipment(
         if flag not in weaknesses:
             weaknesses.append(flag)
 
+    from logistics_agent.core.live_feed import safe_panel
+
+    live = safe_panel(
+        "plan",
+        country_name=country_entry["name"],
+        mode_name=chosen.get("mode_name", ""),
+        hs=hs,
+    )
+
     return {
         "ok": True,
         "query": cmp_result["query"],
+        "live": live,
         "recommendation": pick,
         "chosen_quote": chosen,
         "alternatives": [

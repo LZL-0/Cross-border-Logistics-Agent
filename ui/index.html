@@ -24,6 +24,16 @@
   </header>
 
   <main>
+    <!-- 全局实时行情条：所有板块共用一份缓存 -->
+    <div class="live-strip" id="live-strip">
+      <span class="live-dot"></span>
+      <b>实时行情</b>
+      <span class="live-chip" id="ls-scfi">SCFI 加载中…</span>
+      <span class="live-chip" id="ls-fx">USD/CNY 加载中…</span>
+      <span class="hint" id="ls-time">未加载</span>
+      <button class="ghost" id="ls-refresh">刷新行情</button>
+    </div>
+
     <!-- 对话 -->
     <section class="tab active" id="tab-chat">
       <div class="card">
@@ -217,7 +227,7 @@
         <div class="grid">
           <label class="field">模型 ID<input id="cfg-model" /></label>
           <label class="field">接口地址<input id="cfg-base" /></label>
-          <label class="field">API Key<input id="cfg-key" disabled placeholder="在 .env 中配置，界面不回显" /></label>
+          <label class="field">API Key<input id="cfg-key" autocomplete="off" placeholder="留空则保持 .env 原值" /></label>
           <label class="field">权限模式
             <select id="cfg-perm">
               <option value="plan">plan（写操作需确认）</option>
@@ -234,14 +244,34 @@
         </div>
         <div class="actions">
           <button class="primary" id="cfg-save">保存到 .env</button>
-          <span class="hint">保存后需重启服务生效；API Key 只能在 .env 中修改</span>
+          <span class="hint">保存后需重启服务生效；Key 输入框留空表示不修改</span>
         </div>
+      </div>
+      <div class="card">
+        <h2>实时接入</h2>
+        <div class="hint" id="rt-note">点击检测，逐项验证模型 / 检索 / 汇率 / SCFI 是否可用</div>
+        <div class="actions">
+          <button class="primary" id="rt-check">检测实时链路</button>
+          <span class="hint" id="rt-time"></span>
+        </div>
+        <div id="rt-result"><div class="hint">未检测</div></div>
+      </div>
+      <div class="card">
+        <h2>知识库周更（行情 + 口岸时效）</h2>
+        <div class="hint" id="kb-note">每周自动生成本周候选更新，不会自动改表；确认后写入并备份旧版。</div>
+        <div class="actions">
+          <button class="primary" id="kb-run">生成本周周报</button>
+          <button id="kb-apply">确认写入（先备份）</button>
+          <span class="hint" id="kb-time"></span>
+        </div>
+        <div id="kb-result"><div class="hint">加载中…</div></div>
       </div>
       <div class="card">
         <h2>数据口径</h2>
         <div class="hint">
           税率、运价与清关时效均为内置演示基线（<code>data/knowledge/*.json</code>），
-          不联网、不含真实承运商协议价。正式使用前请替换为官方税则与企业协议价卡。
+          不含真实承运商协议价。开启实时接入后，运价指数、汇率与公开资讯走联网工具取数，
+          回答会标注取数时间与来源；正式使用前请替换为官方税则与企业协议价卡。
         </div>
       </div>
     </section>

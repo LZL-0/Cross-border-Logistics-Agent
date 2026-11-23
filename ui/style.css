@@ -76,6 +76,44 @@ a { color: var(--accent); }
 
 main { padding: 18px 20px 60px; max-width: 1240px; margin: 0 auto; }
 
+/* 实时行情条与板块内实时参考块 */
+.live-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(47,214,165,.08), rgba(47,214,165,.01));
+  font-size: 12.5px;
+}
+.live-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent-2);
+  box-shadow: 0 0 8px rgba(47,214,165,.75);
+}
+.live-chip {
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.live-block {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent-2);
+  border-radius: 10px;
+  background: #0f151d;
+}
+.live-block h3 { margin: 0 0 8px; font-size: 13px; color: var(--accent-2); }
+.live-block ul { margin: 8px 0 0; padding-left: 18px; }
+.live-block li { margin-bottom: 6px; }
+.live-block .live-meta { color: var(--muted); font-size: 12px; }
+
 .tab { display: none; }
 .tab.active { display: block; }
 

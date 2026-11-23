@@ -5,6 +5,7 @@ from logistics_agent.tools.clearance import estimate_clearance, port_status
 from logistics_agent.tools.document import parse_document
 from logistics_agent.tools.knowledge import duty_calc, lookup_country, lookup_hs
 from logistics_agent.tools.rates import compare_rates, list_carriers, quote_rates
+from logistics_agent.tools.realtime import fetch_page, fx_rate, scfi_index, search_web
 from logistics_agent.tools.shipment import export_quote, plan_shipment, quote_stats
 
 __all__ = [
@@ -20,4 +21,8 @@ __all__ = [
     "export_quote",
     "quote_stats",
     "parse_document",
+    "search_web",
+    "fetch_page",
+    "fx_rate",
+    "scfi_index",
 ]

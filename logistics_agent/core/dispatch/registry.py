@@ -21,6 +21,10 @@ TOOL_ROLES = {
     "shipment.plan_shipment": ("plan",),
     "shipment.export_quote": ("quote", "plan"),
     "shipment.quote_stats": ("quote", "plan"),
+    "realtime.web_search": ("quote", "plan", "clearance", "compliance"),
+    "realtime.fetch_page": ("quote", "plan", "clearance", "compliance"),
+    "realtime.fx_rate": ("quote", "plan", "clearance", "compliance"),
+    "realtime.scfi_index": ("quote", "plan", "clearance", "compliance"),
 }
 
 _LOADED = False
@@ -36,6 +40,7 @@ def load_tools() -> None:
         document,
         knowledge,
         rates,
+        realtime,
         shipment,
     )
 

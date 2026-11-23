@@ -14,6 +14,58 @@
     return Number.isFinite(v) ? v.toFixed(d).replace(/\.0$/, "") : "—";
   };
 
+  /* ---------------- 实时参考块（四个板块共用） ---------------- */
+  function renderLive(live, landed) {
+    if (!live) return "";
+    const head = `<h3>实时参考${live.as_of ? `<span class="live-meta">　取数 ${esc(live.as_of)}</span>` : ""}</h3>`;
+    if (live.enabled === false) {
+      return `<div class="live-block">${head}<div class="hint">实时取数已关闭，以上结果全部为知识库基线。</div></div>`;
+    }
+    const m = live.market || {};
+    const scfi = m.scfi;
+    const fx = m.fx;
+    const chips = [];
+    if (scfi && scfi.current) {
+      const sign = Number(scfi.change) > 0 ? "+" : "";
+      chips.push(
+        `<span class="live-chip">SCFI ${num(scfi.current.value, 2)}（${esc(scfi.current.period)}）${esc(scfi.trend || "")} ${sign}${num(scfi.change_pct, 2)}%</span>`,
+      );
+    } else {
+      chips.push('<span class="live-chip">SCFI 取数失败</span>');
+    }
+    if (fx && fx.rates && fx.rates.CNY) {
+      chips.push(`<span class="live-chip">USD/CNY ${Number(fx.rates.CNY).toFixed(4)}</span>`);
+    } else {
+      chips.push('<span class="live-chip">汇率取数失败</span>');
+    }
+    if (m.stale) chips.push('<span class="pill warn">行情为上次成功值兜底</span>');
+
+    const conv =
+      landed && fx && fx.rates && fx.rates.CNY && Number(landed)
+        ? `<div class="hint">按实时汇率折算：${money(landed)} 元 ≈ USD ${money(Number(landed) / Number(fx.rates.CNY))}</div>`
+        : "";
+
+    const news = (live.news || [])
+      .slice(0, 6)
+      .map(
+        (n) => `<li><a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.title || n.url)}</a>
+          <div class="live-meta">${esc(n.topic || "")}${n.published ? " · " + esc(String(n.published).slice(0, 20)) : ""}</div></li>`,
+      )
+      .join("");
+    const errs = (live.errors || [])
+      .slice(0, 2)
+      .map((e) => `<div class="hint">降级：${esc(String(e).slice(0, 90))}</div>`)
+      .join("");
+
+    return `<div class="live-block">${head}
+      <div class="actions" style="margin:0">${chips.join(" ")}</div>
+      ${conv}
+      ${news ? `<ul>${news}</ul>` : '<div class="hint">本次未取到资讯。</div>'}
+      ${errs}
+      <div class="hint">${esc(live.disclaimer || "实时数据仅作行情参考。")}</div>
+    </div>`;
+  }
+
   /* ---------------- tabs ---------------- */
   document.querySelectorAll(".tab-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -214,6 +266,7 @@
       </table>
       <p class="hint" style="margin-top:10px">推荐理由：${esc(d.recommendation.reason)}<br/>${esc(d.recommendation.tradeoff)}</p>
       ${excluded ? `<p class="hint">未纳入：${excluded}</p>` : ""}
+      ${renderLive(d.live, d.recommendation.landed_total)}
     `;
 
     box.querySelectorAll("button[data-export]").forEach((btn) => {
@@ -265,6 +318,7 @@
       ${d.missing_docs.length ? `<h3>缺失单证</h3><p>${d.missing_docs.map((x) => `<span class="pill bad">${esc(x)}</span>`).join("")}</p>` : '<h3>单证</h3><p class="hint">按已备材料判断无缺口</p>'}
       ${d.risks.length ? `<h3>风险</h3><p>${d.risks.map((x) => `<span class="pill warn">${esc(x)}</span>`).join("")}</p>` : ""}
       <p class="hint">${esc(d.note)}</p>
+      ${renderLive(d.live)}
     `;
   }
 
@@ -348,6 +402,7 @@
         </div>
         ${d.duty_exempt ? '<p class="hint">申报货值低于免税额，关税免征。</p>' : ""}
         <p class="hint">单证：${esc((d.docs || []).join("、"))}<br/>${esc(d.note)}</p>
+        ${renderLive(d.live, d.landed_cost)}
       `;
     } catch (err) {
       slot.innerHTML = `<pre class="output">${esc(err.message)}</pre>`;
@@ -395,6 +450,7 @@
       ${d.risks.length ? `<h3>风险</h3><p>${d.risks.map((x) => `<span class="pill warn">${esc(x)}</span>`).join("")}</p>` : ""}
       ${d.advice.length ? `<h3>优化建议</h3><ul>${d.advice.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
       <p class="hint">口径：${esc((d.assumptions || []).slice(0, 3).join("；"))}</p>
+      ${renderLive(d.live, rec.landed_total)}
     `;
   }
 
@@ -477,10 +533,14 @@
       const env = cfg.env || {};
       $("cfg-model").value = env.LLM_MODEL || "";
       $("cfg-base").value = env.LLM_BASE_URL || "";
-      $("cfg-key").placeholder = env.LLM_API_KEY_SET ? "已配置（在 .env 中修改）" : "未配置（走规则兜底）";
+      $("cfg-key").value = "";
+      $("cfg-key").placeholder = env.LLM_API_KEY_SET ? "已配置（留空则不修改）" : "未配置（走规则兜底）";
       $("cfg-perm").value = env.AGENT_PERMISSION_MODE || "plan";
       $("cfg-net").value = env.TOOL_NET_POLICY || "allowlist";
       $("cfg-limit").value = env.MAX_TOOL_CALLS || "12";
+      $("rt-note").textContent = env.REALTIME_ENABLED === "1"
+        ? "实时接入已开启：检索 360 / 汇率 open.er-api / 指数 SCFI"
+        : "实时接入已关闭（REALTIME_ENABLED=0），全部走知识库基线";
     } catch (err) {
       toast(`读取配置失败：${err.message}`);
     }
@@ -494,13 +554,133 @@
       TOOL_NET_POLICY: $("cfg-net").value,
       MAX_TOOL_CALLS: $("cfg-limit").value.trim(),
     };
+    const key = $("cfg-key").value.trim();
+    if (key) values.LLM_API_KEY = key;
     try {
       const res = await postJSON("/api/config", { values });
       toast(res.ok ? "已保存到 .env，重启服务后生效" : "保存失败");
+      if (res.ok) $("cfg-key").value = "";
     } catch (err) {
       toast(`保存失败：${err.message}`);
     }
   });
+
+  /* ---------------- 实时接入自检 ---------------- */
+  const rtRow = (label, check, render) => {
+    const ok = check && check.ok;
+    const pill = ok ? '<span class="pill ok">可用</span>' : '<span class="pill bad">异常</span>';
+    const lat = check && check.latency_ms != null ? `${check.latency_ms}ms` : "";
+    const body = ok ? render(check.detail || {}) : esc((check && check.error) || "未检测");
+    return `<tr><td>${esc(label)}</td><td>${pill}</td><td class="num">${lat}</td><td>${body}</td></tr>`;
+  };
+
+  async function checkRealtime() {
+    $("rt-result").innerHTML = '<div class="hint">检测中…（模型探测约 1–3 秒）</div>';
+    try {
+      const res = await getJSON("/api/realtime/health");
+      const c = res.checks || {};
+      $("rt-time").textContent = `检测时间 ${res.time}　检测源：${res.sources.search}`;
+      $("rt-result").innerHTML = `<table><thead><tr><th>链路</th><th>状态</th><th>耗时</th><th>结果</th></tr></thead><tbody>
+        ${rtRow("DeepSeek 模型", c.llm, (d) => `${esc(d.model || "")} → “${esc(d.reply || "")}”`)}
+        ${rtRow("联网检索", c.search, (d) => `${esc(d.engine || "")} · ${d.count || 0} 条 · 首条：${esc((d.items && d.items[0] && d.items[0].title) || "")}`)}
+        ${rtRow("实时汇率", c.fx, (d) => `${esc(d.base || "")}→CNY ${esc(String((d.rates && d.rates.CNY) || ""))}　更新 ${esc(d.updated_utc || "")}`)}
+        ${rtRow("SCFI 运价指数", c.scfi, (d) => `${esc(String((d.current && d.current.value) || ""))}（${esc((d.current && d.current.period) || "")}）　${esc(d.trend || "")} ${esc(String(d.change_pct || 0))}%`)}
+      </tbody></table>`;
+    } catch (err) {
+      $("rt-result").innerHTML = `<div class="hint">检测失败：${esc(err.message)}</div>`;
+    }
+  }
+
+  $("rt-check").addEventListener("click", checkRealtime);
+
+  /* ---------------- 知识库周更 ---------------- */
+  function renderKb(p) {
+    if (!p) {
+      $("kb-result").innerHTML = '<div class="hint">还没有周报：点「生成本周周报」先生成候选。</div>';
+      return;
+    }
+    const m = (p.market && p.market.proposed) || {};
+    const scfi = m.scfi || {};
+    const fx = (m.fx && m.fx.rates) || {};
+    const rows = ((p.ports && p.ports.proposed) || [])
+      .map(
+        (c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.code)}</td><td>${num(c.current, 1)}</td>
+          <td>${num(c.proposed, 1)}</td><td>${c.delta > 0 ? "+" : ""}${num(c.delta, 1)}</td>
+          <td>${esc(c.confidence)}</td>
+          <td>${esc(c.reason)}${c.evidence && c.evidence[0] && c.evidence[0].url ? ` · <a href="${esc(c.evidence[0].url)}" target="_blank" rel="noopener">来源</a>` : ""}</td></tr>`,
+      )
+      .join("");
+    const status = p.applied_at
+      ? `<span class="pill ok">已于 ${esc(p.applied_at)} 写入</span>`
+      : '<span class="pill warn">待确认</span>';
+    $("kb-time").textContent = `生成于 ${p.generated_at}（${p.trigger === "scheduler" ? "定时" : "手动"}）`;
+    $("kb-result").innerHTML = `
+      <div class="actions" style="margin:0">${status}
+        <span class="live-chip">SCFI ${num(scfi.value, 2)}（${esc(scfi.period || "—")}）${esc(scfi.trend || "")}</span>
+        <span class="live-chip">USD/CNY ${fx.CNY ? Number(fx.CNY).toFixed(4) : "—"}</span>
+        <span class="hint">${esc(p.report || "")}</span>
+      </div>
+      ${
+        rows
+          ? `<table><thead><tr><th>口岸</th><th>代码</th><th>当前</th><th>候选</th><th>变化</th><th>置信</th><th>依据</th></tr></thead><tbody>${rows}</tbody></table>`
+          : '<div class="hint">本周口岸无候选调整（资讯里没有明确的拥堵变化信号）。</div>'
+      }
+      ${p.errors && p.errors.length ? `<div class="hint">降级：${esc(p.errors.slice(0, 2).join(" | ").slice(0, 160))}</div>` : ""}`;
+  }
+
+  async function loadKb() {
+    try {
+      const res = await getJSON("/api/kb/proposal");
+      renderKb(res.ok ? res.data : null);
+    } catch (err) {
+      $("kb-result").innerHTML = `<div class="hint">读取周报失败：${esc(err.message)}</div>`;
+    }
+  }
+
+  $("kb-run").addEventListener("click", async () => {
+    $("kb-result").innerHTML = '<div class="hint">抓取行情与口岸资讯中…（约 5–15 秒）</div>';
+    try {
+      const res = await postJSON("/api/kb/run", {});
+      if (!res.ok) throw new Error(res.error || "生成失败");
+      renderKb(res.data);
+    } catch (err) {
+      $("kb-result").innerHTML = `<div class="hint">生成失败：${esc(err.message)}</div>`;
+    }
+  });
+
+  $("kb-apply").addEventListener("click", async () => {
+    if (!window.confirm("确认把最新周报写入知识库？会先备份 ports.json 与 market_baseline.json。")) return;
+    try {
+      const res = await postJSON("/api/kb/apply?confirm=true", {});
+      if (!res.ok) throw new Error(res.error || "写入失败");
+      const d = res.data || {};
+      $("kb-result").innerHTML = `<div class="hint">已写入：口岸 ${d.ports_applied} 条、行情 ${d.market_written ? "1 份" : "未写入"}；备份在 ${esc(d.backup || "")}</div>`;
+      loadKb();
+    } catch (err) {
+      $("kb-result").innerHTML = `<div class="hint">写入失败：${esc(err.message)}</div>`;
+    }
+  });
+
+  /* ---------------- 实时行情条 ---------------- */
+  async function refreshMarket(force) {
+    try {
+      const res = await getJSON("/api/realtime/market" + (force ? "?force=true" : ""));
+      if (!res.ok) throw new Error(res.error || "行情不可用");
+      const m = res.data || {};
+      const scfi = m.scfi;
+      const fx = m.fx;
+      $("ls-scfi").textContent =
+        scfi && scfi.current
+          ? `SCFI ${num(scfi.current.value, 2)}（${scfi.current.period}）${scfi.trend || ""} ${num(Math.abs(scfi.change_pct), 2)}%`
+          : "SCFI 取数失败";
+      $("ls-fx").textContent =
+        fx && fx.rates && fx.rates.CNY ? `USD/CNY ${Number(fx.rates.CNY).toFixed(4)}` : "汇率取数失败";
+      $("ls-time").textContent = m.as_of ? `更新于 ${m.as_of}${m.stale ? "（上次成功值）" : ""}` : "";
+    } catch (err) {
+      $("ls-time").textContent = `行情刷新失败：${err.message}`;
+    }
+  }
+  $("ls-refresh").addEventListener("click", () => refreshMarket(true));
 
   /* ---------------- init ---------------- */
   addMessage(
@@ -515,4 +695,7 @@
   );
   loadDebug();
   loadConfig();
+  loadKb();
+  refreshMarket();
+  setInterval(() => refreshMarket(), 5 * 60 * 1000);
 })();

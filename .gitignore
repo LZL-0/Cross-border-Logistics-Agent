@@ -14,6 +14,10 @@ data/quotes/*.csv
 data/uploads/*
 !data/quotes/.gitkeep
 
+# 知识库周更的运行时产物（周报与备份），知识库本体仍随仓库
+data/knowledge/weekly/
+data/knowledge/_backup/
+
 # 系统与编辑器
 .DS_Store
 Thumbs.db

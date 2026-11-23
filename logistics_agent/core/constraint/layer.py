@@ -32,6 +32,26 @@ def _iter_urls(args):
         yield args.strip()
 
 
+def _host_allowed(host: str, allowlist) -> bool:
+    """白名单匹配：`*` 全放行；`*.x.com` 前缀通配；`.x.com` 域名及其子域；其余精确匹配。"""
+    for item in allowlist:
+        item = item.strip().lower()
+        if not item:
+            continue
+        if item == "*":
+            return True
+        if item.startswith("*."):
+            base = item[2:]
+            if host == base or host.endswith("." + base):
+                return True
+        elif item.startswith("."):
+            if host == item[1:] or host.endswith(item):
+                return True
+        elif host == item:
+            return True
+    return False
+
+
 def _check_network(args: dict) -> tuple[bool, str]:
     if TOOL_NET_POLICY == "block":
         return False, "网络策略为 block，禁止一切外网请求"
@@ -42,7 +62,7 @@ def _check_network(args: dict) -> tuple[bool, str]:
             return False, f"仅允许 http/https：{url}"
         if TOOL_NET_ALLOWLIST:
             host = (parsed.hostname or "").lower()
-            if host not in TOOL_NET_ALLOWLIST:
+            if not _host_allowed(host, TOOL_NET_ALLOWLIST):
                 return False, f"域名不在白名单：{host}"
     return True, ""
 
