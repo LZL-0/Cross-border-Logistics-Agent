@@ -1,0 +1,91 @@
+/* 手机端适配：单行可滚动标签、加大触控区、刘海屏安全区 */
+html, body { -webkit-text-size-adjust: 100%; }
+
+body {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.top {
+  padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
+  gap: 8px;
+}
+
+.brand {
+  display: block;
+}
+
+.brand-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-title {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: .5px;
+}
+
+.brand-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: #8b9bad;
+  letter-spacing: .3px;
+  line-height: 1.4;
+}
+
+.mode-chip {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #2fd6a5;
+  border: 1px solid rgba(47, 214, 165, .45);
+  background: rgba(47, 214, 165, .12);
+  letter-spacing: 0;
+}
+
+.tabs {
+  width: 100%;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 4px;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.tabs::-webkit-scrollbar { display: none; }
+
+.tab-btn {
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+main { padding: 12px 12px 40px; }
+
+.card { padding: 14px 14px; border-radius: 14px; margin-bottom: 12px; }
+.card h2 { font-size: 14.5px; }
+
+.grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+
+input, select, textarea { font-size: 15px; padding: 10px; border-radius: 10px; }
+label.field { font-size: 12.5px; }
+
+button.primary { padding: 11px 20px; font-size: 15px; border-radius: 10px; }
+button.ghost { padding: 10px 16px; font-size: 14px; }
+
+.messages { min-height: 200px; max-height: 52vh; }
+.bubble { max-width: 100%; font-size: 13.5px; }
+
+.stat-row { grid-template-columns: repeat(2, 1fr); }
+.stat b { font-size: 17px; }
+
+#q-result table, #p-result table { min-width: 560px; }
+table { font-size: 12px; }
+
+.toast { right: 12px; left: 12px; bottom: calc(16px + env(safe-area-inset-bottom)); max-width: none; }
+
+pre.output { max-height: 52vh; }
