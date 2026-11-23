@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>物流引擎 · 检修台</title>
+<style>
+  :root{
+    --ink:#0b0d0a; --panel:#13160f; --panel2:#0f120c; --line:#2a2f22;
+    --text:#e8ecdf; --dim:#8b9380; --acid:#c8f24e; --bad:#ff4d3d; --warn:#ffb020;
+    --mono:"JetBrains Mono","Cascadia Mono",Consolas,ui-monospace,monospace;
+    --sans:"HarmonyOS Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{
+    background:
+      radial-gradient(120% 55% at 92% -8%,rgba(200,242,78,.11),transparent 62%),
+      repeating-linear-gradient(0deg,rgba(255,255,255,.017) 0 1px,transparent 1px 3px),
+      var(--ink);
+    color:var(--text);font-family:var(--sans);display:flex;flex-direction:column;
+  }
+  header{padding:13px 14px 6px;display:flex;align-items:center;gap:10px}
+  .back{display:none;border:1px solid var(--line);background:none;color:var(--dim);
+    font-family:var(--mono);font-size:15px;width:30px;height:30px;border-radius:2px}
+  h1{margin:0;font-size:19px;letter-spacing:.11em;font-weight:800}
+  h1 span{color:var(--acid)}
+  .live{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--acid);
+    display:flex;align-items:center;gap:5px;letter-spacing:.08em}
+  .live i{width:6px;height:6px;border-radius:50%;background:var(--acid);animation:pulse 1.6s infinite}
+  @keyframes pulse{50%{opacity:.25}}
+  .crumb{display:none;padding:0 14px 8px;font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.06em}
+  .crumb b{color:var(--acid);font-weight:600}
+
+  .searchwrap{padding:0 14px 8px;position:sticky;top:0;background:linear-gradient(var(--ink) 80%,transparent);z-index:6}
+  .search{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel2);padding:0 10px;border-radius:2px}
+  .search svg{flex:0 0 14px;opacity:.5}
+  .search input{flex:1;background:none;border:0;outline:0;color:var(--text);
+    font-family:var(--mono);font-size:12.5px;padding:10px 0;letter-spacing:.02em}
+  .search input::placeholder{color:#5c6353}
+  .chips{display:flex;gap:6px;padding:0 14px 9px;overflow:auto}
+  .chip{font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--dim);
+    border:1px solid var(--line);background:transparent;padding:5px 10px;border-radius:2px;white-space:nowrap}
+  .chip.on{color:var(--ink);background:var(--acid);border-color:var(--acid);font-weight:700}
+  .chip.err.on{background:var(--bad);border-color:var(--bad);color:#fff}
+
+  main{flex:1;overflow:auto;padding:2px 12px 26px}
+  .grid{display:flex;gap:9px;padding-top:4px;overflow-x:auto;overflow-y:hidden}
+  .tile{flex:1 0 94px;min-width:94px;border:1px solid var(--line);background:var(--panel);padding:12px 10px 11px;position:relative}
+  .tile::after{content:"";position:absolute;right:10px;top:10px;width:5px;height:5px;background:var(--acid);opacity:.7}
+  .tile .g{font-family:var(--mono);font-size:20px;color:var(--acid);line-height:1}
+  .tile .n{margin-top:9px;font-size:14px;font-weight:700;letter-spacing:.03em}
+  .tile .d{margin-top:3px;font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .agent{border:1px solid var(--line);background:linear-gradient(150deg,#171b12,#0f120c);
+    padding:16px 14px;position:relative;overflow:hidden}
+  .agent::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:var(--acid)}
+  .agent .n{font-size:15px;font-weight:800;letter-spacing:.05em}
+  .agent .d{margin-top:4px;font-family:var(--mono);font-size:10.5px;color:var(--dim);line-height:1.7}
+
+  .sec{margin-bottom:14px}
+  .cols{display:flex;gap:10px;overflow-x:auto;align-items:flex-start;padding-bottom:4px}
+  .cols .sec{flex:1 0 268px;min-width:268px;margin:0}
+  .cols td.t{width:auto}
+  .sec h2{margin:0 0 6px;font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;color:var(--acid);
+    font-weight:600;display:flex;align-items:baseline;gap:8px}
+  .sec h2 em{font-style:normal;color:var(--dim);font-weight:400;letter-spacing:0}
+  table{width:100%;border-collapse:collapse;border:1px solid var(--line);background:var(--panel)}
+  thead th{background:#161a11;color:var(--dim);font-family:var(--mono);font-size:9.5px;
+    letter-spacing:.1em;text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  tbody td{padding:8px;font-size:11.5px;line-height:1.55;vertical-align:top;border-bottom:1px solid #1d2117}
+  tbody tr:last-child td{border-bottom:0}
+  td.t{font-family:var(--mono);font-size:10px;color:var(--dim);white-space:nowrap;width:74px}
+  td.n{font-family:var(--mono);font-size:10.5px;color:#cfd6c4;white-space:nowrap}
+  td.c{color:#dce2d3;word-break:break-word}
+  td.c.err{color:var(--bad)}
+  .role{font-family:var(--mono);font-size:9.5px;color:#7f8773;letter-spacing:.06em}
+  .badge{font-family:var(--mono);font-size:9px;padding:1px 5px;border:1px solid var(--line);color:var(--dim)}
+  .badge.bad{color:var(--bad);border-color:rgba(255,77,61,.55);background:rgba(255,77,61,.08)}
+  .badge.ok{color:var(--acid);border-color:rgba(200,242,78,.4)}
+  .empty{padding:30px 8px;text-align:center;color:#5c6353;font-family:var(--mono);font-size:11px;letter-spacing:.08em}
+  .kv{display:flex;gap:8px;overflow-x:auto}
+  .kv div{flex:1 0 88px;min-width:88px;border:1px solid var(--line);background:var(--panel);padding:11px 10px}
+  .kv b{display:block;font-family:var(--mono);font-size:19px;font-weight:600;color:var(--text)}
+  .kv s{display:block;text-decoration:none;font-family:var(--mono);font-size:9.5px;color:var(--dim);letter-spacing:.08em;margin-top:3px}
+  .kv .e b{color:var(--bad)}
+</style>
+</head>
+<body>
+<header>
+  <button class="back" id="back">‹</button>
+  <h1>检修<span>台</span></h1>
+  <div class="live"><i></i>DEBUG</div>
+</header>
+<div class="crumb" id="crumb"></div>
+
+<div class="searchwrap">
+  <label class="search">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    <input id="q" placeholder="关键字：工具 / 国家 / 报错 / 内容…" autocomplete="off">
+  </label>
+</div>
+<div class="chips" id="chips"></div>
+<main id="main"></main>
+
+<script>
+const $ = s => document.querySelector(s);
+const state = {view:'home', q:'', session:'', errors:false, sessions:[]};
+let timer = null;
+
+const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const clip = (s, n) => { s = String(s ?? ''); return s.length > n ? s.slice(0, n) + '…' : s; };
+const qs = o => Object.entries(o).filter(([,v]) => v !== '' && v !== false)
+  .map(([k,v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+/* 若页面不是由服务直出（file:// 或 IDE 预览代理），自动回落到本机服务 */
+const API_BASE = (location.protocol === 'file:' || !location.host) ? 'http://127.0.0.1:8000' : '';
+
+const api = (p, o) => {
+  const c = new AbortController();
+  const t = setTimeout(() => c.abort(), 8000);
+  const path = p + (qs(o||{}) ? '?' + qs(o) : '');
+  const grab = async (base) => {
+    const r = await fetch(base + path, {signal: c.signal, cache: 'no-store'});
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' · ' + base + path);
+    const txt = await r.text();
+    try { return JSON.parse(txt); }
+    catch { throw new Error('返回非 JSON · ' + base + path + ' · ' + txt.slice(0, 60)); }
+  };
+  return grab(API_BASE)
+    .catch(async e => {
+      if (e.name === 'AbortError') throw new Error('请求超时 8s · ' + (API_BASE || '') + path);
+      if (API_BASE) throw new Error((e.message || 'Failed to fetch') + ' · ' + API_BASE + path);
+      return grab('http://127.0.0.1:8000');   // 同源失败 → 试本机端口
+    })
+    .finally(() => clearTimeout(t));
+};
+const head = (...cols) => '<thead><tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr></thead>';
+
+function setView(v){
+  state.view = v;
+  const deep = v !== 'home';
+  $('#back').style.display = deep ? 'block' : 'none';
+  $('#crumb').style.display = deep ? 'block' : 'none';
+  const trail = {agent:'智能体', memory:'智能体 · 记忆', tools:'智能体 · 工具', overview:'智能体 · 概览'};
+  $('#crumb').innerHTML = deep ? `检修台 / <b>${trail[v] || v}</b>` : '';
+  if (v === 'home') $('#q').value = state.q;
+  renderChips(); draw();
+}
+
+function renderChips(){
+  const box = $('#chips'); box.innerHTML = ''; box.style.display = 'flex';
+  if (state.view === 'tools'){
+    const add = (label, on, fn, cls='') => {
+      const b = document.createElement('button');
+      b.className = 'chip ' + cls + (on ? ' on' : ''); b.textContent = label;
+      b.onclick = () => { fn(); renderChips(); draw(); }; box.appendChild(b);
+    };
+    add('全部调用', !state.errors, () => state.errors = false);
+    add('只看报错', state.errors, () => state.errors = true, 'err');
+  } else { box.style.display = 'none'; }
+}
+
+async function draw(){
+  const m = $('#main');
+  try{
+    if (state.view === 'home') return drawHome(m);
+    if (state.view === 'agent') return drawAgent(m);
+    if (state.view === 'memory') return drawMemory(m);
+    if (state.view === 'tools') return drawTools(m);
+    if (state.view === 'overview') return drawOverview(m);
+  }catch(e){
+    m.innerHTML = `<div class="empty">读取失败：${esc(e.message)}<br><br>
+      <button class="chip on" onclick="draw()">重试</button></div>`;
+  }
+}
+
+/* 先渲染骨架，再补数据：任何接口慢/失败都不会只剩「读取中」 */
+const loadingRow = n => `<tr><td colspan="${n}" class="empty">读取中…</td></tr>`;
+const errRow = (n, e) => `<tr><td colspan="${n}" class="empty" style="color:#ff4d3d">${esc(e.message)}</td></tr>`;
+
+async function drawHome(m){
+  m.innerHTML = `
+    <div class="agent" onclick="setView('agent')">
+      <div class="n">物流引擎智能体</div>
+      <div class="d" id="h-ov">读取统计…</div>
+    </div>
+    <div class="empty" style="padding:18px 8px 8px">点击进入查看该智能体的各层</div>`;
+  try{
+    const ov = (await api('/api/debug/overview')).data || {};
+    $('#h-ov').textContent =
+      `${ov.tool_calls ?? 0} 次工具调用 · ${ov.sessions ?? 0} 个会话 · ${ov.tool_errors ?? 0} 次报错`;
+  }catch(e){ $('#h-ov').textContent = e.message; }
+}
+
+async function drawAgent(m){
+  const tiles = [
+    ['memory','记忆','短期 / 知识库 / 长期', '▤'],
+    ['tools','工具','传入 · 返回 · 报错', '⌘'],
+    ['overview','概览','调用量与会话清单', '◎']
+  ];
+  m.innerHTML = '<div class="grid">' + tiles.map(([v,n,d,g]) =>
+    `<div class="tile" onclick="setView('${v}')"><div class="g">${g}</div>
+     <div class="n">${n}</div><div class="d">${d}</div></div>`).join('') + '</div>'
+    + `<div class="empty" id="a-ov" style="padding:16px 8px">读取统计…</div>`;
+  try{
+    const ov = (await api('/api/debug/overview')).data || {};
+    $('#a-ov').textContent = `当前统计：${ov.tool_calls ?? 0} 调用 / ${ov.long_entries ?? 0} 长期条目`;
+  }catch(e){ $('#a-ov').textContent = e.message; }
+}
+
+async function drawMemory(m){
+  m.innerHTML = `
+  <div class="cols">
+    <section class="sec"><h2>短期记忆 <em id="c-short"></em></h2>
+      <table>${head('时间','内容')}<tbody id="tb-short">${loadingRow(2)}</tbody></table></section>
+    <section class="sec"><h2>知识库 <em id="c-know"></em></h2>
+      <table>${head('文件','规模')}<tbody id="tb-know">${loadingRow(2)}</tbody></table></section>
+    <section class="sec"><h2>长期记忆 <em id="c-long"></em></h2>
+      <table>${head('时间','内容')}<tbody id="tb-long">${loadingRow(2)}</tbody></table></section>
+    <section class="sec"><h2>记忆工具 <em id="c-mtool"></em></h2>
+      <table>${head('时间','工具 / 参数 / 返回')}<tbody id="tb-mtool">${loadingRow(2)}</tbody></table></section>
+  </div>`;
+
+  api('/api/debug/short', {q:state.q, limit:20}).then(s => {
+    $('#c-short').textContent = `${s.count||0} 条`;
+    $('#tb-short').innerHTML = (s.items||[]).map(r => `<tr><td class="t">${esc((r.ts||'').slice(5,16))}</td>
+        <td class="c"><span class="role">${esc(r.role)}</span> ${esc(clip(r.content, 80))}</td></tr>`).join('')
+        || '<tr><td colspan="2" class="empty">暂无</td></tr>';
+  }).catch(e => { $('#tb-short').innerHTML = errRow(2, e); });
+
+  api('/api/debug/knowledge', {q:state.q}).then(k => {
+    $('#c-know').textContent = `${k.count||0} 个文件`;
+    $('#tb-know').innerHTML = (k.items||[]).map(r => r.error
+      ? `<tr><td class="n">${esc(r.file)}</td><td class="c err">${esc(r.error)}</td></tr>`
+      : `<tr><td class="n">${esc(r.file)}</td><td class="c">${r.items} 条 · ${r.keys} 组 · ${r.fields} 字段</td></tr>`
+      ).join('') || '<tr><td colspan="2" class="empty">暂无</td></tr>';
+  }).catch(e => { $('#tb-know').innerHTML = errRow(2, e); });
+
+  api('/api/debug/long', {q:state.q, limit:20}).then(l => {
+    $('#c-long').textContent = `${l.count||0} 条`;
+    $('#tb-long').innerHTML = (l.items||[]).map(r => `<tr><td class="t">${esc((r.ts||'').slice(5,16))}</td>
+        <td class="c"><span class="role">${esc((r.tags||[]).join('/') || '条目')}</span> ${esc(clip(r.text, 80))}</td></tr>`
+        ).join('') || '<tr><td colspan="2" class="empty">暂无</td></tr>';
+  }).catch(e => { $('#tb-long').innerHTML = errRow(2, e); });
+
+  api('/api/debug/memory_tools', {q:state.q, limit:20}).then(r => {
+    const calls = r.items || [], av = r.available || [];
+    $('#c-mtool').textContent = `${calls.length} 次 · ${av.length} 个工具`;
+    const rows = calls.length
+      ? calls.map(c => `<tr><td class="t">${esc((c.ts||'').slice(5,16))}</td>
+          <td class="c"><span class="badge ${c.ok?'ok':'bad'}">${c.ok?'OK':'ERR'}</span> <b>${esc(c.name)}</b>
+          <br><span class="role">传入</span> ${esc(clip(c.args, 70))}
+          <br><span class="role">返回</span> ${esc(clip(c.result, 110))}</td></tr>`).join('')
+      : av.map(a => `<tr><td class="t">可用</td><td class="c"><b>${esc(a.name)}</b>
+          <br><span class="role">参数</span> (${esc(a.params)})
+          <br><span class="role">说明</span> ${esc(a.description)}</td></tr>`).join('');
+    $('#tb-mtool').innerHTML = rows || '<tr><td colspan="2" class="empty">暂无</td></tr>';
+  }).catch(e => { $('#tb-mtool').innerHTML = errRow(2, e); });
+}
+
+async function drawTools(m){
+  m.innerHTML = `<section class="sec"><h2>工具调用 <em id="c-tools"></em></h2>
+    <table>${head('时间','工具','传入 / 返回')}<tbody id="tb-tools">${loadingRow(3)}</tbody></table></section>`;
+  try{
+    const r = await api('/api/debug/tools', {q:state.q, limit:40, errors:state.errors ? 1 : 0});
+    $('#c-tools').textContent = `${r.count||0} 条`;
+    $('#tb-tools').innerHTML = (r.items||[]).map(t => `<tr>
+        <td class="t">${esc((t.ts||'').slice(5,16))}</td>
+        <td class="n">${esc(t.name)}<br><span class="badge ${t.ok?'ok':'bad'}">${t.ok?'OK':'ERR'}</span></td>
+        <td class="c"><span class="role">传入</span><br>${esc(clip(t.args, 120))}
+          <br><span class="role">返回</span><br><span class="${t.ok?'':'err'}">${esc(clip(t.result, 200))}</span></td>
+      </tr>`).join('') || '<tr><td colspan="3" class="empty">还没有工具调用<br>去对话里问一句再来</td></tr>';
+  }catch(e){ $('#tb-tools').innerHTML = errRow(3, e); }
+}
+
+async function drawOverview(m){
+  m.innerHTML = `<div class="kv" id="kv-ov">
+      <div><b>—</b><s>工具调用</s></div><div><b>—</b><s>报错</s></div><div><b>—</b><s>会话</s></div>
+      <div><b>—</b><s>短期消息</s></div><div><b>—</b><s>长期条目</s></div><div><b>—</b><s>知识库文件</s></div>
+    </div>
+    <section class="sec" style="margin-top:14px"><h2>会话清单 <em id="c-sess"></em></h2>
+      <table>${head('最近时间','会话','消息')}<tbody id="tb-sess">${loadingRow(3)}</tbody></table></section>`;
+  try{
+    const ov = (await api('/api/debug/overview')).data || {};
+    $('#kv-ov').innerHTML =
+      `<div><b>${ov.tool_calls??0}</b><s>工具调用</s></div><div class="e"><b>${ov.tool_errors??0}</b><s>报错</s></div>` +
+      `<div><b>${ov.sessions??0}</b><s>会话</s></div><div><b>${ov.short_messages??0}</b><s>短期消息</s></div>` +
+      `<div><b>${ov.long_entries??0}</b><s>长期条目</s></div><div><b>${ov.knowledge_files??0}</b><s>知识库文件</s></div>`;
+  }catch(e){ $('#kv-ov').innerHTML = `<div style="color:#ff4d3d;font-size:11px">${esc(e.message)}</div>`; }
+  try{
+    const ss = (await api('/api/debug/sessions')).items || [];
+    $('#c-sess').textContent = `${ss.length} 个`;
+    $('#tb-sess').innerHTML = ss.map(s=>`<tr><td class="t">${esc((s.last||'').slice(5,16))}</td>
+      <td class="n">${esc((s.session_id||'-').slice(-8))}</td><td class="c">${s.messages} 条</td></tr>`).join('')
+      || '<tr><td colspan="3" class="empty">暂无</td></tr>';
+  }catch(e){ $('#tb-sess').innerHTML = errRow(3, e); }
+}
+
+$('#q').addEventListener('input', e => {
+  clearTimeout(timer);
+  timer = setTimeout(() => { state.q = e.target.value.trim(); draw(); }, 220);
+});
+$('#back').onclick = () => setView(state.view === 'agent' || state.view === 'home' ? 'home' : 'agent');
+setView('home');
+</script>
+</body>
+</html>

@@ -7,6 +7,7 @@
 最多 REACT_MAX_ROUNDS 轮，超出返回已有观察。
 """
 
+import inspect
 import json
 import re
 
@@ -17,14 +18,32 @@ _JSON_RE = re.compile(r"\{.*\}", re.S)
 _SYSTEM_TMPL = """你是「跨境物流引擎」的智能体，角色：{role}。
 只做跨境运输方案、清关时效、税费与比价相关的分析与计算，不编造运价与税率。
 
-可用工具（名称：说明）：
+可用工具（名称：说明；参数：调用时必须使用的英文参数名）：
 {tools}
 
 输出格式（严格遵守，只输出一个 JSON，不要 Markdown 代码块）：
 - 需要调用工具：{{"action": "工具名", "args": {{参数对象}}}}
 - 可以结束：{{"final": "给用户的中文回答，含关键数字与假设"}}
+args 的键必须与上面列出的参数名完全一致，不要自造 origin/destination 等字段。
 一次只调用一个工具；拿到观察结果后再决定下一步。最多 {rounds} 轮。
 """
+
+
+def _params_of(fn) -> str:
+    """抽取工具函数参数名与默认值，供模型照抄，避免自造关键字。"""
+    try:
+        sig = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return ""
+    parts = []
+    for p in sig.parameters.values():
+        if p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
+            continue
+        if p.default is inspect.Parameter.empty:
+            parts.append(p.name)
+        else:
+            parts.append(f"{p.name}={p.default!r}")
+    return ", ".join(parts)
 
 
 def _parse_json(text: str) -> dict | None:
@@ -59,7 +78,10 @@ def run(
     from openai import OpenAI  # 延迟导入：未装 openai 只影响此路径
 
     client = OpenAI(api_key=LLM_API_KEY, base_url=LLM_BASE_URL, timeout=LLM_TIMEOUT)
-    tool_doc = "\n".join(f"- {name}：{item['description']}" for name, item in tools.items())
+    tool_doc = "\n".join(
+        f"- {name}：{item['description']}；参数：({_params_of(item.get('func'))})"
+        for name, item in tools.items()
+    )
     if not tool_doc:
         tool_doc = "（当前角色没有可用工具）"
 

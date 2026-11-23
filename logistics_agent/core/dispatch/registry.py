@@ -38,6 +38,7 @@ def load_tools() -> None:
         rates,
         shipment,
     )
+    from logistics_agent.memory import tools as memory_tools  # noqa: F401  导入即注册记忆工具
 
     _LOADED = True
 
