@@ -6,6 +6,7 @@ venv/
 
 # 本地环境与密钥
 .env
+.cache/
 
 # 运行时数据（示例数据除外）
 data/memory/*.jsonl

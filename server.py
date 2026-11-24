@@ -11,7 +11,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -53,12 +53,41 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_origins=["*"],  # 允许 file:// / IDE 预览等跨源访问调试接口（不带 credentials）
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.mount("/ui", StaticFiles(directory=str(PATHS["ui"])), name="ui")
+
+# 调试平面：仅 DEBUG_TOOLKIT=1 时挂载，正式包不加载
+from debug_kit.flags import DEBUG as _DEBUG  # noqa: E402
+
+if _DEBUG:
+    from debug_kit.router import router as _debug_router
+
+    import debug_kit.tool  # noqa: F401  导入即注册 debugger 角色工具
+
+    app.include_router(_debug_router)
+
+    _DEBUG_HTML = Path(__file__).parent / "debug_kit" / "ui" / "debug.html"
+
+    def _debug_page():
+        """禁止缓存，避免浏览器一直拿着旧版调试页。"""
+        return FileResponse(
+            _DEBUG_HTML,
+            media_type="text/html; charset=utf-8",
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    app.get("/debug", include_in_schema=False)(lambda: _debug_page())
+    app.get("/debug/debug.html", include_in_schema=False)(lambda: _debug_page())
+
+    app.mount(
+        "/debug",
+        StaticFiles(directory=str(Path(__file__).parent / "debug_kit" / "ui")),
+        name="debug",
+    )
 
 SUPERVISOR = Supervisor()
 ORCHESTRATOR = Orchestrator(SUPERVISOR)
@@ -123,7 +152,17 @@ def ask(payload: AskIn) -> dict:
     """一次问答：Supervisor 规则路由 → 业务智能体 → 统一结构。"""
     if not (payload.text or "").strip():
         return {"answer": "请输入内容。", "trace": [], "agent": "supervisor"}
-    return ORCHESTRATOR.handle(payload.text, payload.session_id)
+    result = ORCHESTRATOR.handle(payload.text, payload.session_id)
+    if _DEBUG:  # 调试平面内存记录，未开启时零开销
+        from debug_kit import recorder
+
+        recorder.record(
+            "ask",
+            session_id=payload.session_id or "",
+            agent=result.get("agent", ""),
+            text=payload.text[:60],
+        )
+    return result
 
 
 @app.post("/api/quote")

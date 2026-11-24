@@ -29,10 +29,10 @@ _SYSTEM_TMPL = """你是「跨境物流引擎」的智能体，角色：{role}�
 只做跨境运输方案、清关时效、税费与比价相关的分析与计算，不编造运价与税率。
 今天是 {today}（北京时间），涉及「最新/当前/今年」的问题以这个日期为基准。
 
-可用工具（名称(参数)：说明）：
+可用工具（名称(参数)：说明；参数：调用时必须使用的英文参数名）：
 {tools}
 
-参数名必须与括号里的完全一致，不要自创字段；可选参数拿不准就省略，用默认值。
+args 的键必须与括号里列出的参数名完全一致，不要自造 origin/destination 等字段；可选参数拿不准就省略，用默认值。
 {routing}
 输出格式（严格遵守，只输出一个 JSON，不要 Markdown 代码块）：
 - 需要调用工具：{{"action": "工具名", "args": {{参数对象}}}}
@@ -54,6 +54,23 @@ _REALTIME_HINT = """【实时信息规则】
 """
 
 _OFFLINE_HINT = "【当前离线】没有联网工具。所有运价/税率/汇率都来自知识库基线，回答里必须标明「非实时，演示基线」。"
+
+
+def _params_of(fn) -> str:
+    """抽取工具函数参数名与默认值，供模型照抄，避免自造关键字。"""
+    try:
+        sig = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return ""
+    parts = []
+    for p in sig.parameters.values():
+        if p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
+            continue
+        if p.default is inspect.Parameter.empty:
+            parts.append(p.name)
+        else:
+            parts.append(f"{p.name}={p.default!r}")
+    return ", ".join(parts)
 
 
 def _parse_json(text: str) -> dict | None:
