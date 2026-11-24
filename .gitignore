@@ -11,6 +11,7 @@ venv/
 # 运行时数据（示例数据除外）
 data/memory/*.jsonl
 data/telemetry/*.jsonl
+data/telemetry/*.log
 data/quotes/*.csv
 data/uploads/*
 !data/quotes/.gitkeep
@@ -18,6 +19,8 @@ data/uploads/*
 # 知识库周更的运行时产物（周报与备份），知识库本体仍随仓库
 data/knowledge/weekly/
 data/knowledge/_backup/
+# 未收录品类的待审候选（本地研究队列，确认后才进 hs_codes.json）
+data/knowledge/hs_candidates.json
 
 # 系统与编辑器
 .DS_Store

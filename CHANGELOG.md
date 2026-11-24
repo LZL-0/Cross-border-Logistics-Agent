@@ -1,5 +1,30 @@
 # CHANGELOG
 
+## 20261124（未收录品类自动收录 + 周更品类复核）
+
+### 新增
+- **品类候选收录**（`logistics_agent/core/kb_ingest.py`）：`ingest / find_pending / review / list_candidates /
+  apply_weekly`。`lookup_hs` 未命中时用 `realtime.web_search` 检索 1–2 组 query，抽取 6–10 位 HS、
+  认证词与是否带电，写入 `data/knowledge/hs_candidates.json`（pending），保留标题/链接/发布时间/查询词。
+- **确认才生效**：候选不参与 HS 匹配与税费测算；`review(action=confirm)` 后写入 `hs_codes.json`
+  的 `auto_items`（同基线结构 + `source/confidence/evidence`），`hs_items()` 合并读取，确认后立即生效。
+  确认时可改 HS；无 HS 的候选拒绝确认；同一 HS 已存在则合并关键词、不重复登记。
+- **周更扩围**：`kb_sync` 周报新增「自动收录品类复核」——重检已确认条目 HS、刷新证据、连续 3 周无证据停用；
+  超期且无证据的 pending 进清理建议；`apply_latest` 一并备份 `hs_codes.json` / `hs_candidates.json` 并落盘。
+- **API**：`GET /api/kb/candidates`、`POST /api/kb/candidates/confirm|reject`、`POST /api/kb/ingest`。
+- **配置页**：新增「品类候选（自动收录）」卡片，可改 HS 后确认入库或忽略；周更卡片显示品类复核摘要。
+- **配置项**：`KB_AUTO_INGEST`（默认 1）、`KB_CANDIDATE_TTL_DAYS`（默认 30）；`.env.example` 已补。
+
+### 行为约束
+- 同关键词 10 分钟内不重复检索；被忽略的品类 7 天内不再自动检索；检索结果先按品名/英文词过滤，压掉同日无关新闻。
+- 自动收录条目的目的国税率未核实时按默认 5% 计，`duty_calc` 返回 `source=auto`、`confidence`、`evidence` 与提示。
+- 周更仍只出周报，人工 `confirm=true` 才写盘；写前备份四份文件。
+
+### 验证
+- 实测「LED植物生长灯」：未收录 → 检索出候选（HS 85312000，低置信）→ 确认 → `lookup_hs` 命中 `source=auto`
+  → `duty_calc` 2000 元货值 DE 税费 556 元（关税 100 + VAT 456，默认 5%）→ 周报复核 verify=1、apply 成功并可继续匹配。
+- 测试在知识库完整备份上执行，结束后已回滚测试数据（未留候选与测试周报）。
+
 ## 20261123（接入 DeepSeek + 实时取数）
 
 ### 新增

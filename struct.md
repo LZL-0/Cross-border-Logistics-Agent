@@ -36,6 +36,7 @@ logistics_agent/
 │  ├─ telemetry/live.py         工具/思考/错误事件 → data/telemetry/live.jsonl
 │  ├─ live_feed.py              板块实时快照：market / news（检索+RSS）/ panel / safe_panel
 │  ├─ kb_sync.py                知识库周更：build_proposal / apply_latest(confirm) / start_scheduler
+│  ├─ kb_ingest.py              未收录品类：联网检索→待审候选→确认进 auto_items / 周更复核落盘
 │  └─ output/formatter.py       统一返回体 build(answer, trace, agent) / error()
 ├─ memory/                       短期（会话轮次 JSONL）+ 长期（偏好/事实 KB）+ JSONL 落盘
 ├─ tools/                        领域能力（16 个工具，见 §4）
@@ -54,9 +55,9 @@ logistics_agent/
 │  ├─ clearance_agent.py         清关时效（区间 + 分解 + 缺失单证 + 风险）
 │  ├─ compliance_agent.py        HS / 税率 / 认证 / 单证
 │  └─ summarizer.py              统计与复盘（读落盘报价，不依赖 LLM）
-data/knowledge/                  countries.json / hs_codes.json / carriers.json / ports.json
+data/knowledge/                  countries.json / hs_codes.json（含 auto_items）/ carriers.json / ports.json / hs_candidates.json（品类待审候选）
 data/knowledge/weekly/           每周候选更新 <stamp>.json|.md + latest.json（不入库）
-data/knowledge/_backup/          apply 前的 ports.json / market_baseline.json 快照
+data/knowledge/_backup/          apply 前的 ports / market_baseline / hs_codes / hs_candidates 快照
 data/quotes/quote_log.csv        报价落盘（导出即写一行）
 data/telemetry/live.jsonl        遥测事件；market_cache.json 行情兜底缓存（上次成功值）
 ui/                              index.html + app.js + style.css（原生，无构建链）
@@ -183,7 +184,8 @@ clearance / docs{required,covered,missing} / timeline[{stage,start,end,date,note
   dangerous/max_kg/max_declared/peak_pct`），无需改代码。
 - **加目的国**：`countries.json` 追加（`vat_rate/duty_de_minimis_cny/vat_de_minimis_cny/
   clearance_days/docs/peak_months`），并在 `perception/parser.py` 的国家别名表补中文名/代码。
-- **加 HS 品类**：`hs_codes.json` 追加（`keywords/duty/certs/risk/dg`）。
+- **加 HS 品类**：`hs_codes.json` 追加（`keywords/duty/certs/risk/dg`）；临时品类可走
+  `POST /api/kb/ingest` 检索成候选，确认后自动写进 `auto_items`，不用手工编 JSON。
 - **加工具**：`tools/xxx.py` 写函数 + `@register(roles=[...], name="ns.tool")`，并在
   `dispatch/registry.py` 的 `TOOL_ROLES` 登记（该表是文档镜像，两处必须同步）。
 - **加智能体**：继承 `ReActAgentBase`，实现 `classic_<role>_reply`，在 `Supervisor._agent` 与

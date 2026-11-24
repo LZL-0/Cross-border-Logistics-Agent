@@ -625,6 +625,15 @@
           ? `<table><thead><tr><th>口岸</th><th>代码</th><th>当前</th><th>候选</th><th>变化</th><th>置信</th><th>依据</th></tr></thead><tbody>${rows}</tbody></table>`
           : '<div class="hint">本周口岸无候选调整（资讯里没有明确的拥堵变化信号）。</div>'
       }
+      ${
+        p.categories && (p.categories.confirmed_count || p.categories.pending_count)
+          ? `<div class="hint">品类复核：已确认 ${p.categories.confirmed_count || 0} 条、待审候选 ${p.categories.pending_count || 0} 条${
+              p.categories.hs_changes && p.categories.hs_changes.length ? `；HS 冲突 ${p.categories.hs_changes.length} 条待复核` : ""
+            }${p.categories.missing && p.categories.missing.length ? `；无证据 ${p.categories.missing.length} 条` : ""}${
+              p.categories.prune_pending && p.categories.prune_pending.length ? `；过期候选 ${p.categories.prune_pending.length} 条` : ""
+            }</div>`
+          : ""
+      }
       ${p.errors && p.errors.length ? `<div class="hint">降级：${esc(p.errors.slice(0, 2).join(" | ").slice(0, 160))}</div>` : ""}`;
   }
 
@@ -638,7 +647,7 @@
   }
 
   $("kb-run").addEventListener("click", async () => {
-    $("kb-result").innerHTML = '<div class="hint">抓取行情与口岸资讯中…（约 5–15 秒）</div>';
+    $("kb-result").innerHTML = '<div class="hint">抓取行情、口岸资讯与品类复核中…（约 15–60 秒，已确认品类越多越久）</div>';
     try {
       const res = await postJSON("/api/kb/run", {});
       if (!res.ok) throw new Error(res.error || "生成失败");
@@ -649,15 +658,84 @@
   });
 
   $("kb-apply").addEventListener("click", async () => {
-    if (!window.confirm("确认把最新周报写入知识库？会先备份 ports.json 与 market_baseline.json。")) return;
+    if (!window.confirm("确认把最新周报写入知识库？会先备份 ports.json、market_baseline.json 与品类文件。")) return;
     try {
       const res = await postJSON("/api/kb/apply?confirm=true", {});
       if (!res.ok) throw new Error(res.error || "写入失败");
       const d = res.data || {};
-      $("kb-result").innerHTML = `<div class="hint">已写入：口岸 ${d.ports_applied} 条、行情 ${d.market_written ? "1 份" : "未写入"}；备份在 ${esc(d.backup || "")}</div>`;
+      const cat = d.categories || {};
+      $("kb-result").innerHTML = `<div class="hint">已写入：口岸 ${d.ports_applied} 条、行情 ${d.market_written ? "1 份" : "未写入"}、品类复核 ${cat.verified || 0} 条（HS 调整 ${cat.hs_changed || 0}、停用 ${cat.disabled || 0}、清理候选 ${cat.pruned || 0}）；备份在 ${esc(d.backup || "")}</div>`;
       loadKb();
+      loadCandidates();
     } catch (err) {
       $("kb-result").innerHTML = `<div class="hint">写入失败：${esc(err.message)}</div>`;
+    }
+  });
+
+  /* ---------------- 品类候选（自动收录） ---------------- */
+  function renderCandidates(rows) {
+    if (!rows || !rows.length) {
+      $("cand-result").innerHTML =
+        '<div class="hint">暂无待审候选。查询未收录品类时会自动检索并出现在这里；确认后才参与 HS 匹配与税费测算。</div>';
+      return;
+    }
+    const trs = rows
+      .map((c) => {
+        const ev = (c.evidence || [])[0] || {};
+        const src = ev.url ? `<a href="${esc(ev.url)}" target="_blank" rel="noopener">来源</a>` : "—";
+        return `<tr>
+          <td>${esc(c.name)}${c.hs_options && c.hs_options.length ? `<div class="hint">备选 ${esc(c.hs_options.join("、"))}</div>` : ""}</td>
+          <td><input class="cand-hs" data-id="${esc(c.id)}" value="${esc(c.hs || "")}" placeholder="6-10 位" style="width:120px" /></td>
+          <td>${esc(c.confidence || "low")}</td>
+          <td>${src}</td>
+          <td><button class="primary" data-cand="confirm" data-id="${esc(c.id)}">确认入库</button>
+            <button data-cand="reject" data-id="${esc(c.id)}">忽略</button></td>
+        </tr>`;
+      })
+      .join("");
+    $("cand-result").innerHTML = `
+      <table><thead><tr><th>品类</th><th>HS 编码（可改）</th><th>置信</th><th>来源</th><th>操作</th></tr></thead>
+      <tbody>${trs}</tbody></table>
+      <div class="hint">候选来自公开资讯的自动解析，HS 与税率可能不准；确认前不参与任何测算。</div>`;
+  }
+
+  async function loadCandidates() {
+    try {
+      const res = await getJSON("/api/kb/candidates?status=pending");
+      renderCandidates(res.ok ? res.data : []);
+      $("cand-time").textContent = `待审 ${((res.data || []).length)} 条`;
+    } catch (err) {
+      $("cand-result").innerHTML = `<div class="hint">读取候选失败：${esc(err.message)}</div>`;
+    }
+  }
+
+  $("cand-refresh").addEventListener("click", loadCandidates);
+
+  $("cand-result").addEventListener("click", async (ev) => {
+    const btn = ev.target.closest("[data-cand]");
+    if (!btn) return;
+    const id = btn.getAttribute("data-id");
+    const action = btn.getAttribute("data-cand");
+    const row = btn.closest("tr");
+    const hsInput = row ? row.querySelector(".cand-hs") : null;
+    const hs = hsInput ? hsInput.value.trim() : "";
+    if (action === "confirm") {
+      if (!hs) {
+        toast("请先填写 HS 编码再确认");
+        return;
+      }
+      if (!window.confirm(`确认把该品类写入知识库（HS ${hs}）？确认后会参与 HS 匹配与税费测算。`)) return;
+    }
+    const url =
+      `/api/kb/candidates/${action}?id=${encodeURIComponent(id)}` + (action === "confirm" ? `&hs=${encodeURIComponent(hs)}` : "");
+    try {
+      const res = await postJSON(url, {});
+      if (!res.ok) throw new Error(res.error || "操作失败");
+      toast(action === "confirm" ? "已写入知识库" : "已忽略该候选（7 天内不再自动检索）");
+      loadCandidates();
+      loadKb();
+    } catch (err) {
+      toast(`操作失败：${err.message}`);
     }
   });
 
@@ -696,6 +774,7 @@
   loadDebug();
   loadConfig();
   loadKb();
+  loadCandidates();
   refreshMarket();
   setInterval(() => refreshMarket(), 5 * 60 * 1000);
 })();

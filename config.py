@@ -108,6 +108,10 @@ LIVE_NEWS_LIMIT = _env_int("LIVE_NEWS_LIMIT", 3)
 KB_SYNC_ENABLED = _env_bool("KB_SYNC_ENABLED", True)
 KB_SYNC_WEEKDAY = _env_int("KB_SYNC_WEEKDAY", 4)
 KB_SYNC_HOUR = _env_int("KB_SYNC_HOUR", 18)
+# 未收录品类：命中不到时是否联网检索并存入「待审候选」（确认后才进知识库）
+KB_AUTO_INGEST = _env_bool("KB_AUTO_INGEST", True)
+# 待审候选的有效期（天）：过期且复核无证据的，由周更流程建议清理
+KB_CANDIDATE_TTL_DAYS = _env_int("KB_CANDIDATE_TTL_DAYS", 30)
 
 # ------------------------- 权限与约束 -------------------------
 

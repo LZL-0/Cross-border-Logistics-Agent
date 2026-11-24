@@ -257,14 +257,23 @@
         <div id="rt-result"><div class="hint">未检测</div></div>
       </div>
       <div class="card">
-        <h2>知识库周更（行情 + 口岸时效）</h2>
-        <div class="hint" id="kb-note">每周自动生成本周候选更新，不会自动改表；确认后写入并备份旧版。</div>
+        <h2>知识库周更（行情 + 口岸时效 + 品类复核）</h2>
+        <div class="hint" id="kb-note">每周自动生成本周候选更新，不会自动改表；确认后写入并备份旧版。品类复核只覆盖已确认的自动收录条目。</div>
         <div class="actions">
           <button class="primary" id="kb-run">生成本周周报</button>
           <button id="kb-apply">确认写入（先备份）</button>
           <span class="hint" id="kb-time"></span>
         </div>
         <div id="kb-result"><div class="hint">加载中…</div></div>
+      </div>
+      <div class="card">
+        <h2>品类候选（自动收录）</h2>
+        <div class="hint" id="cand-note">知识库未收录的品类会在查询时联网检索并存入候选；确认后才参与 HS 匹配与税费测算，每周随周报复核一次。</div>
+        <div class="actions">
+          <button id="cand-refresh">刷新候选</button>
+          <span class="hint" id="cand-time"></span>
+        </div>
+        <div id="cand-result"><div class="hint">加载中…</div></div>
       </div>
       <div class="card">
         <h2>数据口径</h2>

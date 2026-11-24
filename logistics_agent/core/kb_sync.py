@@ -195,6 +195,74 @@ def _port_changes(items: list[dict]) -> list[dict]:
     return changes
 
 
+def _category_payload() -> dict:
+    """周更的品类复核：重检已确认的自动收录条目，并列出过期待审候选。
+
+    只出结论，不写盘——真正落盘在 apply_latest()；未确认候选永远不进匹配。
+    """
+    from logistics_agent.core import kb_ingest
+
+    errors: list[str] = []
+    confirmed = kb_ingest.confirmed_items()
+    verify: list[dict] = []
+    changes: list[dict] = []
+    missing: list[dict] = []
+
+    for item in confirmed[:6]:
+        name = item.get("name") or ""
+        items, err = kb_ingest._search(f"{name} HS编码 出口", limit=3)
+        errors.extend(err)
+        items = kb_ingest._relevant(items, name)
+        evidence = [
+            {"title": (i.get("title") or "")[:80], "url": i.get("url"), "published": i.get("published")}
+            for i in items[:2]
+        ]
+        if not items:
+            missing.append(
+                {
+                    "hs": item.get("hs"),
+                    "name": name,
+                    "miss_streak": int(item.get("miss_streak", 0)) + 1,
+                    "reason": "本周检索不到该品类的公开 HS 依据",
+                }
+            )
+            continue
+        codes = kb_ingest._extract_codes(items)
+        top_code, top_score = codes[0] if codes else ("", 0)
+        if top_code and top_code != item.get("hs") and top_score >= 6:
+            changes.append(
+                {
+                    "current": item.get("hs"),
+                    "proposed": top_code,
+                    "name": name,
+                    "confidence": "low",
+                    "reason": "当周公开资讯里高频指向另一 HS 编码，需人工复核税则差异",
+                    "evidence": evidence,
+                }
+            )
+        else:
+            verify.append({"hs": item.get("hs"), "name": name, "evidence": evidence, "checked_at": _now()})
+
+    pending = kb_ingest.list_candidates("pending", 200)
+    prune = [
+        c
+        for c in pending
+        if kb_ingest._age_hours(c.get("added_at")) > KB_CANDIDATE_TTL_DAYS * 24
+        and int(c.get("observed_count", 0)) <= 1
+    ]
+
+    return {
+        "checked_at": _now(),
+        "confirmed_count": len(confirmed),
+        "pending_count": len(pending),
+        "verify": verify,
+        "hs_changes": changes,
+        "missing": missing,
+        "prune_pending": [{"id": c.get("id"), "name": c.get("name"), "added_at": c.get("added_at")} for c in prune],
+        "errors": list(dict.fromkeys(errors))[:6],
+    }
+
+
 def _report_md(proposal: dict) -> str:
     market = (proposal.get("market") or {}).get("proposed") or {}
     scfi = market.get("scfi") or {}
@@ -203,7 +271,7 @@ def _report_md(proposal: dict) -> str:
         f"# 知识库周报 · {proposal['stamp']}",
         "",
         f"- 生成时间：{proposal['generated_at']}（触发：{proposal['trigger']}）",
-        f"- 范围：行情基线 + ports.json 的 congestion_days",
+        f"- 范围：行情基线 + ports.json 的 congestion_days + 自动收录品类复核",
         f"- 说明：本文件只是候选更新，未写盘；确认后由 `/api/kb/apply` 落盘并备份。",
         "",
         "## 一、行情基线",
@@ -236,9 +304,36 @@ def _report_md(proposal: dict) -> str:
                 f"{c['delta']:+} | {c['confidence']} | {c['reason']} {link} |"
             )
 
+    cat = proposal.get("categories") or {}
+    checked = len(cat.get("verify", [])) + len(cat.get("hs_changes", [])) + len(cat.get("missing", []))
+    lines += ["", "## 三、自动收录品类复核", ""]
+    if not cat.get("confirmed_count") and not cat.get("pending_count"):
+        lines.append("本周知识库没有自动收录的品类，也没有待审候选。")
+    else:
+        lines.append(
+            f"- 已确认条目 {cat.get('confirmed_count', 0)} 个，本周复核 {checked} 个；"
+            f"待审候选 {cat.get('pending_count', 0)} 个（未确认前不参与匹配与税费测算）"
+        )
+        if cat.get("hs_changes"):
+            lines += ["", "| 品类 | 原 HS | 候选 HS | 置信 | 依据 |", "|---|---|---|---|---|"]
+            for c in cat["hs_changes"]:
+                ev = (c.get("evidence") or [{}])[0]
+                link = f"[{(ev.get('title') or '')[:26]}]({ev.get('url')})" if ev.get("url") else ""
+                lines.append(f"| {c['name']} | {c['current']} | {c['proposed']} | {c['confidence']} | {c['reason']} {link} |")
+        if cat.get("missing"):
+            lines += ["", "本周复核无证据（连续 3 周将停用）：" + "、".join(
+                f"{m['name']}（miss_streak={m['miss_streak']}）" for m in cat["missing"]
+            )]
+        if cat.get("prune_pending"):
+            lines += ["", "过期待审候选（确认后清理）：" + "、".join(
+                f"{p.get('name') or p.get('id')}（{p.get('added_at', '')[:10]}）" for p in cat["prune_pending"]
+            )]
+        if not cat.get("hs_changes") and not cat.get("missing") and not cat.get("prune_pending"):
+            lines.append("- 本周复核未见 HS 冲突或无证据条目，证据已刷新。")
+
     errors = proposal.get("errors") or []
     if errors:
-        lines += ["", "## 三、降级记录", ""]
+        lines += ["", "## 四、降级记录", ""]
         lines += [f"- {e}" for e in errors[:6]]
     return "\n".join(lines) + "\n"
 
@@ -267,6 +362,13 @@ def build_proposal(trigger: str = "manual") -> dict:
 
     port_changes = _port_changes(items)
 
+    try:
+        categories = _category_payload()
+        errors.extend(categories.get("errors") or [])
+    except Exception as exc:  # noqa: BLE001 品类复核失败不影响其它板块出周报
+        categories = {"checked_at": _now(), "confirmed_count": 0, "pending_count": 0, "verify": [], "hs_changes": [], "missing": [], "prune_pending": [], "errors": []}
+        errors.append(f"categories: {type(exc).__name__}: {exc}"[:160])
+
     market_changed = False
     if market_proposed:
         old = {
@@ -286,9 +388,10 @@ def build_proposal(trigger: str = "manual") -> dict:
         "stamp": stamp,
         "generated_at": _now(),
         "trigger": trigger,
-        "scope": ["market_baseline", "ports.congestion_days"],
+        "scope": ["market_baseline", "ports.congestion_days", "hs_codes.auto_items"],
         "market": {"proposed": market_proposed, "current": current_market, "changed": market_changed},
         "ports": {"proposed": port_changes, "count": len(port_changes), "news_scanned": len(items)},
+        "categories": categories,
         "errors": list(dict.fromkeys(errors)),
         "applied_at": None,
     }
@@ -337,7 +440,7 @@ def history(limit: int = 12) -> list[dict]:
 
 
 def apply_latest(confirm: bool = False) -> dict:
-    """把最新周报落盘：先备份，再改 ports.json 的 congestion_days、写 market_baseline.json。"""
+    """把最新周报落盘：先备份，再改 ports.json / market_baseline.json / 品类 auto_items。"""
     if not confirm:
         return {"ok": False, "error": "写操作需要 confirm=true（本周报不会自动改表）"}
     proposal = latest_proposal()
@@ -351,6 +454,13 @@ def apply_latest(confirm: bool = False) -> dict:
     shutil.copy2(PORTS_FILE, backup_dir / "ports.json")
     if MARKET_FILE.exists():
         shutil.copy2(MARKET_FILE, backup_dir / "market_baseline.json")
+    from logistics_agent.core import kb_ingest
+
+    if Path(PATHS["hs_codes"]).exists():
+        shutil.copy2(PATHS["hs_codes"], backup_dir / "hs_codes.json")
+    candidates_file = Path(PATHS["knowledge"]) / "hs_candidates.json"
+    if candidates_file.exists():
+        shutil.copy2(candidates_file, backup_dir / "hs_candidates.json")
 
     applied_ports = 0
     changes = (proposal.get("ports") or {}).get("proposed") or []
@@ -375,6 +485,12 @@ def apply_latest(confirm: bool = False) -> dict:
         _write(MARKET_FILE, payload)
         market_written = True
 
+    category_stats: dict = {}
+    try:
+        category_stats = kb_ingest.apply_weekly(proposal.get("categories") or {})
+    except Exception as exc:  # noqa: BLE001 品类落盘失败也要给出原因，不静默
+        category_stats = {"error": f"{type(exc).__name__}: {exc}"[:160]}
+
     # 知识库用 lru_cache 缓存，落盘后必须失效，否则旧值要重启才生效
     try:
         from logistics_agent.tools.knowledge import _load as _kb_load
@@ -390,12 +506,13 @@ def apply_latest(confirm: bool = False) -> dict:
 
     from logistics_agent.core.telemetry import live
 
-    live.log("kb_apply", stamp=proposal["stamp"], ports=applied_ports, market=market_written)
+    live.log("kb_apply", stamp=proposal["stamp"], ports=applied_ports, market=market_written, categories=category_stats)
     return {
         "ok": True,
         "stamp": proposal["stamp"],
         "ports_applied": applied_ports,
         "market_written": market_written,
+        "categories": category_stats,
         "backup": str(backup_dir),
     }
 

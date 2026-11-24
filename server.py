@@ -43,7 +43,7 @@ from logistics_agent.tools.rates import compare_rates, list_carriers
 from logistics_agent.tools.realtime import fetch_page, fx_rate, scfi_index, search_web
 from logistics_agent.tools.shipment import export_quote, plan_shipment
 
-VERSION = "20261121"
+VERSION = "20261124"
 
 app = FastAPI(
     title="跨境物流引擎",
@@ -226,6 +226,13 @@ def api_duty(hs: str = "", country: str = "", declared_value: float = 0, freight
 def api_stats() -> dict:
     data = SUPERVISOR.stats()
     data["quotes"]["recent"] = quote_rows()[-5:]
+    try:
+        from logistics_agent.core.kb_ingest import confirmed_items, list_candidates
+
+        data["knowledge"]["hs_auto"] = len(confirmed_items())
+        data["knowledge"]["candidates_pending"] = len(list_candidates("pending"))
+    except Exception:  # noqa: BLE001 统计失败不影响主接口
+        pass
     return data
 
 
@@ -325,13 +332,51 @@ def api_kb_history(limit: int = 12) -> dict:
 
 @app.post("/api/kb/apply")
 def api_kb_apply(confirm: bool = False) -> dict:
-    """确认写入：备份后覆盖 ports.json 的 congestion_days 与 market_baseline.json。"""
+    """确认写入：备份后覆盖 ports.json / market_baseline.json / 品类 auto_items。"""
     from logistics_agent.core.kb_sync import apply_latest
 
     result = apply_latest(confirm=confirm)
     if not result.get("ok"):
         return {"ok": False, "error": result.get("error", "写入失败")}
     return {"ok": True, "data": result}
+
+
+# ------------------------- 品类候选（自动收录） -------------------------
+
+
+@app.get("/api/kb/candidates")
+def api_kb_candidates(status: str = "pending", limit: int = 50) -> dict:
+    """待审/已忽略的品类候选；pending 不参与 HS 匹配与税费测算。"""
+    from logistics_agent.core.kb_ingest import list_candidates
+
+    return _guard(list_candidates, status=status, limit=limit)
+
+
+@app.post("/api/kb/candidates/confirm")
+def api_kb_confirm(id: str = "", hs: str = "", name: str = "", note: str = "") -> dict:
+    """确认候选写入知识库（hs_codes.json 的 auto_items），可选改 HS 或补备注。"""
+    from logistics_agent.core.kb_ingest import review
+
+    selector = id or hs or name
+    return _guard(review, selector, action="confirm", note=(note or (f"确认 HS={hs}" if hs else "")).strip())
+
+
+@app.post("/api/kb/candidates/reject")
+def api_kb_reject(id: str = "", hs: str = "", name: str = "", note: str = "") -> dict:
+    """忽略候选：留在候选表标 rejected，7 天内不再自动检索该品类。"""
+    from logistics_agent.core.kb_ingest import review
+
+    return _guard(review, (id or hs or name), action="reject", note=note)
+
+
+@app.post("/api/kb/ingest")
+def api_kb_ingest(keyword: str = "") -> dict:
+    """手动触发一次品类检索收录（用于未收录品类补录）。"""
+    from logistics_agent.core.kb_ingest import ingest
+
+    if not (keyword or "").strip():
+        return {"ok": False, "error": "keyword 为空"}
+    return _guard(ingest, keyword.strip(), trigger="manual")
 
 
 def _probe(name: str, fn) -> dict:

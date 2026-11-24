@@ -30,7 +30,7 @@
 | 报价落盘与导出 | 每次导出写 `data/quotes/quote_log.csv`，可查询历史、可下载报价单 CSV |
 | 实时取数 | 联网检索（360 结果页，Bing 兜底）、网页正文抽取、SCFI 综合运价指数、日更汇率；结果带取数时间与来源，失败自动退回基线 |
 | 板块实时 | 比价/清关/合规/方案四页各有「实时参考」块（行情 + 汇率折算 + 板块资讯），页面顶部常驻全局行情条 |
-| 知识库周更 | 每周生成行情基线 + 口岸时效候选，人工确认后备份落盘；行情基线兼作实时失败时的兜底 |
+| 知识库周更 | 每周生成行情基线 + 口岸时效 + 自动收录品类复核候选，人工确认后备份落盘；未收录品类自动联网收录为待审候选 |
 | 可观测 | 每一步工具调用进 trace（轮次/工具/状态/参数/结果摘要），遥测写 `data/telemetry/live.jsonl` |
 
 ---
@@ -128,20 +128,36 @@ TOOL_NET_ALLOWLIST=*                # 收紧时改成 *.bing.com,open.er-api.com
 
 板块里的「实时参考」是当场取数；知识库则是**一周校准一次**，由 `logistics_agent/core/kb_sync.py` 负责：
 
-- **范围**：行情基线（SCFI 综合指数 + 主要货币汇率）+ 口岸时效（`ports.json` 的 `congestion_days`）。
+- **范围**：行情基线（SCFI 综合指数 + 主要货币汇率）+ 口岸时效（`ports.json` 的 `congestion_days`）
+  + 自动收录品类复核（`hs_codes.json` 的 `auto_items`，见 2.5.3）。
 - **节奏**：默认每周五 18:00 之后自动生成一次（`KB_SYNC_ENABLED=1`、`KB_SYNC_WEEKDAY=4`、`KB_SYNC_HOUR=18`），
   需要服务在运行；到点只会生成周报，**不会自动改表**。
 - **三步走**：
   1. 生成：`POST /api/kb/run`，或配置页点「生成本周周报」；
   2. 查看：`GET /api/kb/proposal`，报告落在 `data/knowledge/weekly/<stamp>.md`；
-  3. 写入：`POST /api/kb/apply?confirm=true`，先把 `ports.json` 与 `market_baseline.json` 备份到
-     `data/knowledge/_backup/<时间戳>/`，再覆盖对应字段，并清掉知识库缓存。
+  3. 写入：`POST /api/kb/apply?confirm=true`，先把 `ports.json`、`market_baseline.json`、
+     `hs_codes.json`、`hs_candidates.json` 备份到 `data/knowledge/_backup/<时间戳>/`，
+     再覆盖对应字段，并清掉知识库缓存。
 - **口岸候选的保守规则**：只盯当周拥堵最重的前 5 个口岸；标题必须命中该口岸名、且不是多港口横向对比稿；
   发布时间超过 120 天的旧文不作依据；单次最多调整 ±0.3 天（区间 0.5–8）。本周没有明确信号就不改表。
 - **行情基线**：`market_baseline.json` 是二级兜底——实时源和 `market_cache.json` 都挂掉时，
   页面仍能显示上周口径，并标 `stale`。
-- **不做什么**：税率表、HS 归类、承运商条款不在自动更新范围（公开源没有可核实的结构化数据），
-  仍按内置基线 + 人工维护。
+- **不做什么**：内置 13 品类的税率表、承运商条款不在自动更新范围（公开源没有可核实的结构化数据），
+  仍按内置基线 + 人工维护；只有已人工确认的自动收录品类参与周更复核。
+
+### 2.5.3 未收录品类：先检索入候选，确认后才进库
+
+- **触发**：`knowledge.lookup_hs` 查不到品类（关键词与 HS 都没命中）时，自动用 `realtime.web_search`
+  检索 1–2 组 query，从标题/摘要里解析 6–10 位 HS 编码，并粗判认证（CE/FCC/…）与是否带电。
+- **落点**：`data/knowledge/hs_candidates.json` 的 pending 列表，保留标题、链接、发布时间与查询词；
+  同一关键词 10 分钟内不重复检索，被人工忽略的品类 7 天内不再自动检索。
+- **生效**：候选**不参与** HS 匹配与税费测算；只有确认后才写入 `hs_codes.json` 的 `auto_items`
+  （与内置条目同结构，另带 `source/confidence/evidence`），此时才进入归类与测算。
+  确认时可改 HS（自动解析的编码可能不准），无 HS 的候选必须先补编码才能确认。
+- **周更**：每周复核已确认的 auto_items——重检 HS（高频冲突会列出候选）、刷新证据；
+  连续 3 周检索不到证据的条目停用（数据保留）；超过 `KB_CANDIDATE_TTL_DAYS`（默认 30 天）
+  且无证据的 pending 由周报建议清理。仍走人工 `apply`，不自动改表。
+- **开关**：`KB_AUTO_INGEST=0` 关闭自动检索；候选审核接口见第 3 节。
 
 服务没开也想按周跑，用 `scripts/kb_weekly.bat`（只生成周报，不改表），配一条 Windows 计划任务：
 
@@ -180,7 +196,11 @@ schtasks /create /sc weekly /d FRI /st 18:30 /tn "跨境物流引擎-知识库�
 | POST | `/api/kb/run` | 立即生成本周知识库候选更新（只写周报） |
 | GET | `/api/kb/proposal` | 查看最新周报（行情候选 + 口岸候选 + 报告路径） |
 | GET | `/api/kb/history` | 历次周报摘要 |
-| POST | `/api/kb/apply` | 确认写入（需 `confirm=true`，自动备份） |
+| POST | `/api/kb/apply` | 确认写入（需 `confirm=true`，自动备份，含品类复核结论） |
+| GET | `/api/kb/candidates` | 品类候选列表（`status=pending/rejected/all`） |
+| POST | `/api/kb/candidates/confirm` | 确认候选入库（`id` + 可改 `hs` + `note`） |
+| POST | `/api/kb/candidates/reject` | 忽略候选（`id`，7 天内不再自动检索） |
+| POST | `/api/kb/ingest` | 手动检索收录一个未收录品类（`keyword`） |
 | GET | `/api/realtime/health` | 模型 / 检索 / 汇率 / SCFI 四段自检 |
 | GET | `/` | 单页看板（`{{V}}` 替换为版本号） |
 
@@ -205,6 +225,8 @@ schtasks /create /sc weekly /d FRI /st 18:30 /tn "跨境物流引擎-知识库�
   中远海运 FCL、德迅 LCL、中欧班列）——计费方式、价格、航线系数、时效区间、准点率、
   是否自营清关、危险品资质、重量/货值上限、旺季涨幅、备注。
 - `ports.json`：17 个海港/机场——拥堵天数、平均停留。
+- `hs_candidates.json`：未收录品类的待审候选（pending / rejected），确认后写入 `hs_codes.json`
+  的 `auto_items`；pending 不参与 HS 匹配与税费测算。
 
 **计费**
 
@@ -286,11 +308,11 @@ schtasks /create /sc weekly /d FRI /st 18:30 /tn "跨境物流引擎-知识库�
 config.py            全局配置槽（路径/模型/权限/预算/业务基线）
 server.py            FastAPI 入口与全部 HTTP 接口
 logistics_agent/
-  core/              toolkit / dispatch / perception / cognition / constraint / reflection / telemetry / output，外加 live_feed（板块实时快照）、kb_sync（知识库周更）
+  core/              toolkit / dispatch / perception / cognition / constraint / reflection / telemetry / output，外加 live_feed（板块实时快照）、kb_sync（知识库周更）、kb_ingest（未收录品类候选）
   memory/            短期（会话 JSONL）与长期（偏好/事实）记忆
   tools/             knowledge / clearance / rates / shipment / catalog / document / realtime（16 个注册工具）
   Agents/            supervisor / plan / quote / clearance / compliance / summarizer
-data/knowledge/      countries / hs_codes / carriers / ports；market_baseline.json（周更行情基线）
+data/knowledge/      countries / hs_codes / carriers / ports；market_baseline.json（周更行情基线）、hs_candidates.json（品类待审候选）
 data/knowledge/weekly/   每周候选更新（json + md），latest.json 指向最新一版
 data/knowledge/_backup/  每次 apply 前的快照备份
 data/telemetry/      live.jsonl 遥测 + market_cache.json 行情兜底缓存
