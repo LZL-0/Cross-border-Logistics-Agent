@@ -1,5 +1,44 @@
 # CHANGELOG
 
+## 20261125（服务端加固 + 运输方式归一化 + APK 1.1.0）
+
+### 修复
+- **运输方式显示名被静默降级**：`normalize_mode` 之前只认代码和「拼柜/整柜」等简称，认不出工具自己返回的
+  `mode_name`（「海运拼柜 / 海运整柜 / 国际快递」），一律按 `express` 处理。表现为 `/api/quote` 传
+  `mode=海运拼柜` 得到 0 家可选、清关时效按快递算 5.0–6.8 天、`/api/ask` 里模型照抄显示名后连续重试直到轮次耗尽。
+  现在先按代码匹配，再反查 `_MODE_CN` 显示名，最后查中文简称；**认不出来直接报错并列出可选值**，不再静默按快递。
+  同步修改 `android/app/assets/www/engine.js` 的 `normalizeMode`（离线引擎同一份逻辑）。
+- **离线导出 CSV 公式注入**：`toCSV` 对以 `= + - @` 开头的字段加 `'` 前缀，避免 Excel 当公式执行。
+- **跨源写操作**：`CORSMiddleware` 从 `allow_origins=["*"]` 收紧为只允许本机回环来源；新增同源中间件，
+  非 GET 请求若带 `Origin` 且与 `Host` 不一致直接 403。此前任意网页可 `POST /api/config` 改写 `LLM_BASE_URL`
+  把 API Key 引到外部地址。`LLM_BASE_URL` 另外限定必须 `http(s)://`。
+- **报价 CSV 表头**：`append_rows/read_csv` 改为按首行内容判断表头，BOM-only / 无表头文件会自动补表头再读写；
+  表头判定移入文件锁，避免并发重复写头。写入时统一做公式注入转义（`= + - @` 前置 `'`）。
+- **入参边界**：`QuoteIn / PlanIn / ClearanceIn / ExportIn / AskIn` 加 `Field` 约束（重量 > 0、件数 ≥ 1、
+  货值/费用 ≥ 0、尺寸 ≤ 10m、文本 ≤ 5000 字），非法入参返回 422，不再把负重量按 0.1kg 报价。
+- `/api/hs` 少调用一次 `match_hs_candidates`；服务版本号改为 `20261125`。
+
+### 新增
+- **回归脚本** `scripts/regression.py`：13 项用例，覆盖运输方式别名、未知方式报错、README 基线、
+  CSV 表头自愈与公式转义、Pydantic 边界、HTTP 422、CORS 预检收紧、跨源写配置拦截、同源放行。
+  脚本会在随机端口起临时服务，跑完自动关闭，CSV 用例只在临时目录执行。
+
+### 变更
+- Android `versionCode 2 → 3`、`versionName 1.1.0 → 1.2.0`，用原 keystore 重新签名，可直接覆盖安装。
+- 离线引擎补入参边界：重量 ≤ 0、件数 < 1、货值为负、尺寸为负/超 10m 时直接报错，不再静默按 0.1kg / 1 件报价；
+  `scripts/test_engine.js` 增加 7 组边界用例，与 Python 侧口径一致。
+- 知识库重新内联（`gen_data.py`），`data.js` 内容与 `data/knowledge/*.json` 一致。
+
+### 验证
+- `node scripts/test_engine.js` / `test_api.js` 全过：德国 20kg T 恤 8 家、税费 1664、顺丰 3479.91；
+  拼柜 10562.9、47.5–61 天；入参边界 7/7 拦截。
+- `python scripts/regression.py` **13/13 通过**；8000 端口实测原失败问法
+  「300kg 家具…德国 要海运拼柜」：`plan_shipment` 首轮成功，6 轮全部 ok，不再返回原始 JSON。
+- 跨源 `POST /api/config` 返回 403 且 `.env` 未变；`weight_kg=-20`、`pieces=0` 返回 422。
+
+### 注意
+- CORS 不再放行 `file://`（Origin: null）；页面请按 README 用 uvicorn 打开，不要直接双击 `ui/index.html`。
+
 ## 20261124（未收录品类自动收录 + 周更品类复核）
 
 ### 新增

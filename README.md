@@ -62,6 +62,12 @@ LLM 路径需要 `openai` 包（已在 `requirements.txt`）：
 页面共 7 个标签：**对话 / 比价 / 清关 / 合规 / 方案 / 调试 / 配置**；
 「配置」页里点 **检测实时链路**，会逐项验模型、检索、汇率、SCFI 是否可用。
 
+改完代码先跑回归（会临时起一份服务，跑完自动关）：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\regression.py
+```
+
 ---
 
 ## 2.5 实时接入（DeepSeek + 联网取数）

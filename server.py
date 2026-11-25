@@ -8,12 +8,13 @@
 import json
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from config import (
     AGENT_PERMISSION_MODE,
@@ -43,7 +44,7 @@ from logistics_agent.tools.rates import compare_rates, list_carriers
 from logistics_agent.tools.realtime import fetch_page, fx_rate, scfi_index, search_web
 from logistics_agent.tools.shipment import export_quote, plan_shipment
 
-VERSION = "20261124"
+VERSION = "20261125"
 
 app = FastAPI(
     title="跨境物流引擎",
@@ -53,10 +54,28 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 允许 file:// / IDE 预览等跨源访问调试接口（不带 credentials）
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # 只放行本机来源；页面由本服务同源托管，正常使用不依赖跨域。
+    allow_origin_regex=r"^https?://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$",
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
+
+
+@app.middleware("http")
+async def _same_origin_guard(request, call_next):
+    """写操作只接受同源浏览器请求，挡住任意网页对本地 API 的跨源写入。"""
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        origin = request.headers.get("origin")
+        if origin:
+            host = (request.headers.get("host") or "").lower()
+            netloc = urlparse(origin).netloc.lower()
+            if not netloc or netloc != host:
+                live.log("blocked_cross_origin", path=request.url.path, origin=origin[:80])
+                return JSONResponse(
+                    status_code=403,
+                    content={"ok": False, "error": "跨源写操作被拒绝：仅允许本机同源访问"},
+                )
+    return await call_next(request)
 
 app.mount("/ui", StaticFiles(directory=str(PATHS["ui"])), name="ui")
 
@@ -94,31 +113,31 @@ ORCHESTRATOR = Orchestrator(SUPERVISOR)
 
 
 class AskIn(BaseModel):
-    text: str
+    text: str = Field("", max_length=5000)
     session_id: str | None = None
 
 
 class QuoteIn(BaseModel):
-    country: str
-    weight_kg: float = 1
-    length: float = 0
-    width: float = 0
-    height: float = 0
-    mode: str = ""
-    pieces: int = 1
-    hs: str = ""
-    declared_value: float = 0
+    country: str = Field(..., min_length=1, max_length=40)
+    weight_kg: float = Field(1, gt=0, le=1_000_000)
+    length: float = Field(0, ge=0, le=10_000)
+    width: float = Field(0, ge=0, le=10_000)
+    height: float = Field(0, ge=0, le=10_000)
+    mode: str = Field("", max_length=20)
+    pieces: int = Field(1, ge=1, le=100_000)
+    hs: str = Field("", max_length=20)
+    declared_value: float = Field(0, ge=0, le=1_000_000_000)
     docs_provided: list[str] | None = None
-    prefer: str = "balance"
+    prefer: str = Field("balance", max_length=20)
 
 
 class ClearanceIn(BaseModel):
-    country: str
-    mode: str = "express"
-    hs: str = ""
+    country: str = Field(..., min_length=1, max_length=40)
+    mode: str = Field("express", max_length=20)
+    hs: str = Field("", max_length=20)
     docs_provided: list[str] | None = None
-    port: str = ""
-    declared_value: float = 0
+    port: str = Field("", max_length=40)
+    declared_value: float = Field(0, ge=0, le=1_000_000_000)
 
 
 class PlanIn(QuoteIn):
@@ -126,16 +145,16 @@ class PlanIn(QuoteIn):
 
 
 class ExportIn(BaseModel):
-    country: str
-    carrier: str
-    mode: str = ""
-    weight_kg: float = 1
-    declared_value: float = 0
-    freight_total: float = 0
-    tax: float = 0
-    landed_total: float = 0
-    eta_date: str = ""
-    note: str = ""
+    country: str = Field(..., min_length=1, max_length=40)
+    carrier: str = Field(..., min_length=1, max_length=100)
+    mode: str = Field("", max_length=20)
+    weight_kg: float = Field(0, ge=0, le=1_000_000)
+    declared_value: float = Field(0, ge=0, le=1_000_000_000)
+    freight_total: float = Field(0, ge=0, le=1_000_000_000)
+    tax: float = Field(0, ge=0, le=1_000_000_000)
+    landed_total: float = Field(0, ge=0, le=1_000_000_000)
+    eta_date: str = Field("", max_length=40)
+    note: str = Field("", max_length=200)
 
 
 def _guard(fn, *args, **kwargs):
@@ -210,8 +229,8 @@ def api_ports(port: str = "") -> dict:
 
 @app.get("/api/hs")
 def api_hs(keyword: str = "", hs: str = "", limit: int = 5) -> dict:
-    return {"ok": True, "data": {"found": bool(match_hs_candidates(keyword, hs, limit)),
-                                 "candidates": match_hs_candidates(keyword, hs, limit)}}
+    candidates = match_hs_candidates(keyword, hs, limit)
+    return {"ok": True, "data": {"found": bool(candidates), "candidates": candidates}}
 
 
 @app.get("/api/duty")
@@ -487,6 +506,8 @@ def save_config(payload: ConfigIn) -> dict:
         if key not in ENV_WRITABLE:
             continue
         value = str(raw).strip().replace("\n", "").replace("\r", "")
+        if key == "LLM_BASE_URL" and value and not value.startswith(("http://", "https://")):
+            return {"ok": False, "error": "LLM_BASE_URL 必须以 http:// 或 https:// 开头"}
         index = next(
             (i for i, line in enumerate(lines) if "=" in line and line.split("=", 1)[0].strip() == key),
             None,

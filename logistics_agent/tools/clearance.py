@@ -22,17 +22,39 @@ _SPREAD = {"express": 0.8, "air": 1.5, "ocean": 2.5, "rail": 2.0}
 _MODE_CN = {"express": "国际快递", "air": "空运", "ocean": "海运", "lcl": "海运拼柜", "fcl": "海运整柜", "rail": "铁路"}
 
 
-def normalize_mode(mode: str) -> str:
+_MODE_ZH = {
+    "快递": "express", "国际快递": "express", "专线": "express", "小包": "express",
+    "空运": "air", "空派": "air",
+    "海运": "ocean", "海派": "ocean", "整柜": "fcl", "拼柜": "lcl",
+    "海运拼柜": "lcl", "海运整柜": "fcl", "国际快递（门到门）": "express",
+    "铁路": "rail", "班列": "rail", "中欧班列": "rail",
+}
+
+
+def normalize_mode(mode: str) -> str | None:
+    """归一化运输方式：接受代码、工具返回的显示名（mode_name）与中文简称。
+
+    空值按 express 处理（与历史默认一致）；认不出来返回 None，由调用方报错，
+    避免把「海运拼柜」这类显示名静默降级成快递。
+    """
     text = (mode or "").strip().lower()
+    if not text:
+        return "express"
     if text in _MODE_TO_DAYS:
         return text
-    zh = {
-        "快递": "express", "国际快递": "express", "专线": "express", "小包": "express",
-        "空运": "air", "空派": "air",
-        "海运": "ocean", "海派": "ocean", "整柜": "fcl", "拼柜": "lcl",
-        "铁路": "rail", "班列": "rail", "中欧班列": "rail",
-    }
-    return zh.get(text, "express")
+    if text in _MODE_ZH:
+        return _MODE_ZH[text]
+    for code, name in _MODE_CN.items():
+        if name.lower() == text:
+            return code
+    return None
+
+
+def mode_error(mode: str) -> ValueError:
+    return ValueError(
+        f"未知运输方式：{mode or '（空）'}；可选 express/air/ocean/lcl/fcl/rail，"
+        f"或 国际快递/空运/海运/海运拼柜/海运整柜/铁路"
+    )
 
 
 def _docs_covered(required: list[str], provided: list[str]) -> tuple[list[str], list[str]]:
@@ -77,7 +99,10 @@ def estimate(
     if not country_entry:
         raise ValueError(f"未识别的目的国：{country or '（空）'}")
 
-    mode = normalize_mode(mode)
+    mode_norm = normalize_mode(mode)
+    if not mode_norm:
+        raise mode_error(mode)
+    mode = mode_norm
     days_key = _MODE_TO_DAYS[mode]
     base = float(country_entry.get("clearance_days", {}).get(days_key, 2.5))
 

@@ -194,20 +194,34 @@
   }
 
   /* ---------------- 运输方式 ---------------- */
+  /* 归一化运输方式：接受代码（express/air/ocean/lcl/fcl/rail）、
+     工具返回的显示名（国际快递/海运拼柜/海运整柜…）和中文简称；空值按快递。
+     认不出来返回 null，由调用方报错，避免静默按快递报价。 */
   function normalizeMode(mode) {
     var text = String(mode || "").trim().toLowerCase();
+    if (!text) return "express";
     if (MODE_CN.hasOwnProperty(text)) return text;
+    var code;
+    for (code in MODE_CN) {
+      if (MODE_CN.hasOwnProperty(code) && MODE_CN[code] === text) return code;
+    }
     var zh = {
       "快递": "express", "国际快递": "express", "专线": "express", "小包": "express",
       "空运": "air", "空派": "air", "海运": "ocean", "海派": "ocean",
       "整柜": "fcl", "拼柜": "lcl", "铁路": "rail", "班列": "rail", "中欧班列": "rail"
     };
-    return zh[text] || "express";
+    if (zh.hasOwnProperty(text)) return zh[text];
+    return null;
+  }
+
+  function modeLabel(mode) {
+    return MODE_CN[mode] || "国际快递 / 空运 / 海运 / 海运拼柜 / 海运整柜 / 铁路";
   }
 
   function modeMatch(requested, carrierMode) {
     if (!requested) return true;
     var req = normalizeMode(requested);
+    if (!req) return true;
     if (req === "ocean") return carrierMode === "lcl" || carrierMode === "fcl";
     if (req === "lcl") return carrierMode === "lcl";
     if (req === "fcl") return carrierMode === "fcl";
@@ -299,10 +313,25 @@
   function quoteAll(country, weightKg, length, width, height, mode, pieces, hs, declaredValue) {
     var countryEntry = resolveCountry(country);
     if (!countryEntry) throw new Error("未识别的目的国：" + (country || "（空）"));
-    var code = countryEntry.code;
-    var weight = Math.max(0.1, Number(weightKg) || 0);
+    if (mode && !normalizeMode(mode)) {
+      throw new Error("未知运输方式：" + mode + "（可选 " + modeLabel() + "）");
+    }
+    var w = Number(weightKg);
+    if (!isFinite(w) || w <= 0) throw new Error("总重量需大于 0 kg");
+    if (w > 1000000) throw new Error("总重量超出可测算范围（≤ 1000000 kg）");
+    var weight = w;
     var dims = [Number(length) || 0, Number(width) || 0, Number(height) || 0];
-    pieces = parseInt(pieces || 1, 10) || 1;
+    dims.forEach(function (v) {
+      if (!isFinite(v) || v < 0) throw new Error("尺寸不能为负数");
+      if (v > 10000) throw new Error("单边尺寸超出可测算范围（≤ 10000 cm）");
+    });
+    pieces = (pieces === undefined || pieces === null || pieces === "") ? 1 : parseInt(pieces, 10);
+    if (!isFinite(pieces) || pieces < 1) throw new Error("件数需为 ≥ 1 的整数");
+    if (pieces > 100000) throw new Error("件数超出可测算范围（≤ 100000）");
+    var declaredValueNum = Number(declaredValue) || 0;
+    if (declaredValueNum < 0) throw new Error("申报货值不能为负数");
+    declaredValue = declaredValueNum;
+    var code = countryEntry.code;
     var hsEntry = hs ? findHsEntry("", hs) : null;
     var needDg = !!(hsEntry && hsEntry.dg);
 
@@ -409,7 +438,9 @@
   function estimate(country, mode, hs, docsProvided, carrier, port, declaredValue) {
     var countryEntry = resolveCountry(country);
     if (!countryEntry) throw new Error("未识别的目的国：" + (country || "（空）"));
+    var rawMode = mode;
     mode = normalizeMode(mode || "express");
+    if (!mode) throw new Error("未知运输方式：" + (rawMode || "") + "（可选 " + modeLabel() + "）");
     var daysKey = MODE_TAIL[mode];
     var base = Number((countryEntry.clearance_days || {})[daysKey] || 2.5);
 
@@ -1193,7 +1224,7 @@
       quote_id: qid,
       created_at: nowText(),
       country: countryEntry.code,
-      mode: normalizeMode(body.mode),
+      mode: normalizeMode(body.mode) || "",
       carrier: body.carrier,
       weight_kg: round2(body.weight_kg || 0),
       declared_value: round2(body.declared_value || 0),
@@ -1214,6 +1245,8 @@
     var head = QUOTE_FIELDS.join(",");
     var line = QUOTE_FIELDS.map(function (f) {
       var v = row[f] === undefined ? "" : String(row[f]);
+      // 防公式注入：以 = + - @ 开头的值在 Excel 里会被当公式执行
+      if (/^[=+\-@]/.test(v)) v = "'" + v;
       return /[",\n]/.test(v) ? "\"" + v.replace(/"/g, "\"\"") + "\"" : v;
     }).join(",");
     return "\ufeff" + head + "\n" + line + "\n";

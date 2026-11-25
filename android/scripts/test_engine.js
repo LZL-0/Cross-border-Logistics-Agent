@@ -37,3 +37,26 @@ const a = E.ask('20kg 服装，尺寸 50x40x30cm，货值 5000 元，发德国�
 console.log('\nask agent', a.agent);
 console.log(a.answer.split('\n').slice(0, 8).join('\n'));
 console.log('trace', a.trace.map(t => t.action + ':' + t.ok + ':' + String(t.result).slice(0, 40)).join(' | '));
+
+/* 入参边界：负值/零值必须报错，不能静默按 0.1kg 或 1 件报价 */
+const badCases = [
+  ['weight=-20', () => E.compare('德国', -20, 0, 0, 0, '', 1)],
+  ['weight=0', () => E.compare('德国', 0, 0, 0, 0, '', 1)],
+  ['pieces=0', () => E.compare('德国', 5, 0, 0, 0, '', 0)],
+  ['pieces=-3', () => E.compare('美国', 5, 0, 0, 0, '', -3)],
+  ['value=-100', () => E.compare('美国', 5, 0, 0, 0, '', 1, '', -100)],
+  ['length=-1', () => E.compare('美国', 5, -1, 0, 0, '', 1)],
+  ['mode=随便', () => E.compare('德国', 5, 0, 0, 0, '随便', 1)]
+];
+let failed = 0;
+console.log('\n=== 入参边界 ===');
+badCases.forEach(([name, fn]) => {
+  try {
+    fn();
+    console.log('FAIL', name, '未报错');
+    failed += 1;
+  } catch (err) {
+    console.log('PASS', name, '->', err.message);
+  }
+});
+if (failed) process.exitCode = 1;

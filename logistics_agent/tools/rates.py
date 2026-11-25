@@ -56,6 +56,8 @@ def _mode_match(requested: str, carrier_mode: str) -> bool:
     if not requested:
         return True
     req = normalize_mode(requested)
+    if not req:
+        return True
     if req == "ocean":
         return carrier_mode in ("lcl", "fcl")
     if req == "lcl":
@@ -159,6 +161,11 @@ def quote_all(
     country_entry = resolve_country(country)
     if not country_entry:
         raise ValueError(f"未识别的目的国：{country or '（空）'}")
+    if mode and not normalize_mode(mode):
+        raise ValueError(
+            f"未知运输方式：{mode}；可选 express/air/ocean/lcl/fcl/rail，"
+            f"或 国际快递/空运/海运/海运拼柜/海运整柜/铁路"
+        )
 
     code = country_entry["code"]
     weight = max(0.1, float(weight_kg or 0))
@@ -218,7 +225,7 @@ def quote_all(
         "query": {
             "country": code,
             "country_name": country_entry["name"],
-            "mode": normalize_mode(mode) if mode else "不限",
+            "mode": (normalize_mode(mode) or "") if mode else "不限",
             "weight_kg": round(weight, 2),
             "dims_cm": [dims[0], dims[1], dims[2]],
             "pieces": int(pieces or 1),

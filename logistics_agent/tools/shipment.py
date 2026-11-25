@@ -203,7 +203,7 @@ def export_quote(
         "quote_id": quote_id,
         "created_at": _now(),
         "country": country_entry["code"],
-        "mode": normalize_mode(mode),
+        "mode": normalize_mode(mode) or "",
         "carrier": carrier,
         "weight_kg": round(float(weight_kg or 0), 2),
         "declared_value": round(float(declared_value or 0), 2),
