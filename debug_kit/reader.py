@@ -121,9 +121,121 @@ def knowledge(q: str = "") -> list[dict]:
     return out
 
 
+def knowledge_file(name: str):
+    """读取单个知识库文件的完整内容（仅限 data/knowledge 下的 .json）。"""
+    base = PATHS["knowledge"]
+    fname = Path(str(name or "")).name
+    if not fname.endswith(".json"):
+        return None
+    path = base / fname
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return {"file": fname, "error": str(exc)}
+
+
+def usage(q: str = "", session: str = "", limit: int = 50) -> list[dict]:
+    """总对话级 token：一次问答一条，calls 内为该轮每次模型请求（分对话）。"""
+    rows = [r for r in _read_jsonl(PATHS["telemetry_file"]) if r.get("kind") == "usage"]
+    out = []
+    for r in reversed(rows):
+        if session and r.get("session") != session:
+            continue
+        if not _hit(r, q):
+            continue
+        calls = r.get("calls") or []
+        out.append(
+            {
+                "ts": r.get("ts", ""),
+                "model": r.get("model", ""),
+                "agent": r.get("agent", ""),
+                "session": r.get("session", ""),
+                "rounds": r.get("rounds", 0) or len(calls),
+                "requests": r.get("requests", len(calls)),
+                "calls": [
+                    {
+                        "round": c.get("round", 0),
+                        "model": c.get("model", ""),
+                        "latency_ms": c.get("latency_ms", 0),
+                        "prompt_tokens": c.get("prompt_tokens", 0),
+                        "completion_tokens": c.get("completion_tokens", 0),
+                        "cached_tokens": c.get("cached_tokens", 0),
+                        "total_tokens": c.get("total_tokens", 0),
+                        "estimated": bool(c.get("estimated")),
+                        "output": c.get("output", ""),
+                        "tool_count": len(c.get("tools") or []),
+                        "error_count": len(c.get("issues") or []),
+                    }
+                    for c in calls
+                ],
+                "prompt_tokens": r.get("prompt_tokens", 0),
+                "completion_tokens": r.get("completion_tokens", 0),
+                "total_tokens": r.get("total_tokens", 0),
+                "cached_tokens": r.get("cached_tokens", 0),
+                "estimated": bool(r.get("estimated")),
+                "latency_ms": r.get("latency_ms", 0),
+                "question": r.get("question", ""),
+            }
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
+def usage_total() -> dict:
+    """全部对话 + 全部模型请求的汇总。"""
+    rows = [r for r in _read_jsonl(PATHS["telemetry_file"]) if r.get("kind") == "usage"]
+    all_calls = [c for r in rows for c in (r.get("calls") or [])]
+    total = {
+        "calls": len(rows),
+        "requests": len(all_calls) or sum(int(r.get("rounds", 0) or 0) for r in rows),
+        "prompt_tokens": sum(int(r.get("prompt_tokens", 0) or 0) for r in rows),
+        "completion_tokens": sum(int(r.get("completion_tokens", 0) or 0) for r in rows),
+        "cached_tokens": sum(int(r.get("cached_tokens", 0) or 0) for r in rows),
+        "estimated_calls": sum(1 for r in rows if r.get("estimated")),
+    }
+    total["total_tokens"] = total["prompt_tokens"] + total["completion_tokens"]
+    total["avg_request_ms"] = (
+        round(sum(int(c.get("latency_ms", 0) or 0) for c in all_calls) / len(all_calls))
+        if all_calls
+        else 0
+    )
+    return total
+
+
+def usage_call(ts: str, rnd: int = 0) -> dict | None:
+    """分对话详情：某次提问里第 rnd 次模型请求的完整记录（工具 / 内容 / 报错）。"""
+    for r in _read_jsonl(PATHS["telemetry_file"]):
+        if r.get("kind") != "usage" or r.get("ts") != ts:
+            continue
+        calls = r.get("calls") or []
+        for c in calls:
+            if rnd and int(c.get("round", 0) or 0) != int(rnd):
+                continue
+            return {
+                "turn": {
+                    "ts": r.get("ts", ""),
+                    "agent": r.get("agent", ""),
+                    "model": r.get("model", ""),
+                    "session": r.get("session", ""),
+                    "question": r.get("question", ""),
+                    "total_tokens": r.get("total_tokens", 0),
+                    "requests": r.get("requests", len(calls)),
+                    "latency_ms": r.get("latency_ms", 0),
+                    "error": r.get("error", ""),
+                },
+                "call": c,
+            }
+        return None
+    return None
+
+
 def overview() -> dict:
     """面板顶部概览数字。"""
     tools = [r for r in _read_jsonl(PATHS["telemetry_file"]) if r.get("kind") == "tool"]
+    tok = usage_total()
     return {
         "tool_calls": len(tools),
         "tool_errors": sum(1 for r in tools if not r.get("ok")),
@@ -131,6 +243,8 @@ def overview() -> dict:
         "short_messages": len(_read_jsonl(PATHS["short_term"])),
         "long_entries": len(long_term.all_entries(100000)),
         "knowledge_files": len(list(PATHS["knowledge"].glob("*.json"))),
+        "llm_calls": tok["calls"],
+        "tokens_total": tok["total_tokens"],
     }
 
 
@@ -139,6 +253,10 @@ __all__ = [
     "short_term",
     "long_term_entries",
     "knowledge",
+    "knowledge_file",
     "sessions",
     "overview",
+    "usage",
+    "usage_total",
+    "usage_call",
 ]

@@ -69,6 +69,36 @@
     letter-spacing:.1em;text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
   tbody td{padding:8px;font-size:11.5px;line-height:1.55;vertical-align:top;border-bottom:1px solid #1d2117}
   tbody tr:last-child td{border-bottom:0}
+  tbody tr[data-ts]{cursor:pointer}
+  tbody tr.sel td{background:rgba(200,242,78,.07)}
+  .lv{display:flex;align-items:center;gap:10px;margin:0 0 10px}
+  .back2{border:1px solid var(--line);background:var(--panel2);color:var(--dim);
+    font-family:var(--mono);font-size:11px;padding:6px 10px;border-radius:2px;letter-spacing:.05em}
+  .back2:hover{color:var(--acid);border-color:var(--acid)}
+  .lv span{font-family:var(--mono);font-size:10.5px;color:var(--dim);letter-spacing:.05em}
+  pre.box{margin:0;border:1px solid var(--line);background:var(--panel2);padding:10px;
+    font-family:var(--mono);font-size:11px;line-height:1.65;color:#d6dccd;
+    white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto}
+  .iss{display:flex;flex-direction:column;gap:6px}
+  .iss div{border:1px solid rgba(255,77,61,.4);background:rgba(255,77,61,.06);
+    padding:8px 10px;font-size:11.5px;color:#ffb3ab;word-break:break-word}
+  .iss div.none{border-color:rgba(200,242,78,.3);background:rgba(200,242,78,.05);color:var(--dim)}
+  details summary{cursor:pointer;font-family:var(--mono);font-size:10.5px;color:var(--dim);margin:10px 0 6px}
+  #tb-short tr[data-i],#tb-long tr[data-i],#tb-know tr[data-i],#tb-mtool tr[data-i]{cursor:pointer}
+  #tb-short tr[data-i]:hover td,#tb-long tr[data-i]:hover td,
+  #tb-know tr[data-i]:hover td,#tb-mtool tr[data-i]:hover td{background:rgba(200,242,78,.05)}
+  #modal{position:fixed;inset:0;background:rgba(4,6,3,.8);display:none;z-index:60;padding:22px 14px;overflow:auto}
+  #modal.on{display:block}
+  #modal .card{max-width:780px;margin:0 auto;background:var(--panel);border:1px solid var(--line);padding:15px}
+  #modal h3{margin:0 0 10px;font-size:14px;letter-spacing:.06em;display:flex;align-items:center;gap:8px}
+  #modal .x{margin-left:auto;border:1px solid var(--line);background:none;color:var(--dim);
+    width:26px;height:26px;border-radius:2px;font-size:14px;cursor:pointer;line-height:1}
+  #modal .x:hover{color:var(--acid);border-color:var(--acid)}
+  #modal .meta{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}
+  #modal .meta span{font-family:var(--mono);font-size:10px;color:var(--dim);border:1px solid var(--line);padding:3px 7px}
+  #modal pre{margin:0;white-space:pre-wrap;word-break:break-word;font-family:var(--mono);
+    font-size:11.5px;line-height:1.7;max-height:62vh;overflow:auto;
+    background:var(--panel2);border:1px solid var(--line);padding:10px;color:#d6dccd}
   td.t{font-family:var(--mono);font-size:10px;color:var(--dim);white-space:nowrap;width:74px}
   td.n{font-family:var(--mono);font-size:10.5px;color:#cfd6c4;white-space:nowrap}
   td.c{color:#dce2d3;word-break:break-word}
@@ -78,6 +108,8 @@
   .badge.bad{color:var(--bad);border-color:rgba(255,77,61,.55);background:rgba(255,77,61,.08)}
   .badge.ok{color:var(--acid);border-color:rgba(200,242,78,.4)}
   .empty{padding:30px 8px;text-align:center;color:#5c6353;font-family:var(--mono);font-size:11px;letter-spacing:.08em}
+  .agdesc{border-left:2px solid var(--acid);background:var(--panel2);padding:9px 11px;
+    font-size:11.5px;line-height:1.7;color:#d6dccd;margin-bottom:8px;white-space:pre-wrap}
   .kv{display:flex;gap:8px;overflow-x:auto}
   .kv div{flex:1 0 88px;min-width:88px;border:1px solid var(--line);background:var(--panel);padding:11px 10px}
   .kv b{display:block;font-family:var(--mono);font-size:19px;font-weight:600;color:var(--text)}
@@ -102,9 +134,15 @@
 <div class="chips" id="chips"></div>
 <main id="main"></main>
 
+<div id="modal"><div class="card">
+  <h3><span id="m-title"></span><button class="x" id="m-x">✕</button></h3>
+  <div class="meta" id="m-meta"></div>
+  <pre id="m-body"></pre>
+</div></div>
+
 <script>
 const $ = s => document.querySelector(s);
-const state = {view:'home', q:'', session:'', errors:false, sessions:[]};
+const state = {view:'home', q:'', session:'', errors:false, sessions:[], turn:'', uLevel:1, round:0};
 let timer = null;
 
 const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -135,13 +173,50 @@ const api = (p, o) => {
 };
 const head = (...cols) => '<thead><tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr></thead>';
 
+/* 记忆 / 知识库 / 记忆工具：点击行弹出全文 */
+const memData = {short:[], long:[], know:[], tools:[]};
+function openModal(title, meta, body){
+  $('#m-title').textContent = title || '详情';
+  $('#m-meta').innerHTML = (meta || [])
+    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => `<span>${esc(k)} · ${esc(v)}</span>`).join('');
+  $('#m-body').textContent = body ?? '';
+  $('#modal').classList.add('on');
+  $('#modal').scrollTop = 0;
+}
+function closeModal(){ $('#modal').classList.remove('on'); }
+$('#m-x').onclick = closeModal;
+$('#modal').onclick = e => { if (e.target.id === 'modal') closeModal(); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+/* 已注册工具的说明与接口签名：一次拉取，全页复用 */
+let toolMeta = null, toolMetaReq = null;
+function loadToolMeta(){
+  if (toolMeta) return Promise.resolve(toolMeta);
+  if (!toolMetaReq) toolMetaReq = api('/api/debug/tools_meta')
+    .then(r => (toolMeta = r.items || {}))
+    .catch(() => (toolMeta = {}));
+  return toolMetaReq;
+}
+
+/* 智能体说明与各自暴露的接口：一次拉取，全页复用 */
+let agentMeta = null, agentMetaReq = null;
+function loadAgentMeta(){
+  if (agentMeta) return Promise.resolve(agentMeta);
+  if (!agentMetaReq) agentMetaReq = api('/api/debug/agents_meta')
+    .then(r => (agentMeta = r.items || {}))
+    .catch(() => (agentMeta = {}));
+  return agentMetaReq;
+}
+
 function setView(v){
   state.view = v;
   const deep = v !== 'home';
   $('#back').style.display = deep ? 'block' : 'none';
   $('#crumb').style.display = deep ? 'block' : 'none';
-  const trail = {agent:'智能体', memory:'智能体 · 记忆', tools:'智能体 · 工具', overview:'智能体 · 概览'};
+  const trail = {agent:'智能体', memory:'智能体 · 记忆', tools:'智能体 · 工具', usage:'智能体 · Token', overview:'智能体 · 概览'};
   $('#crumb').innerHTML = deep ? `检修台 / <b>${trail[v] || v}</b>` : '';
+  if (v === 'usage'){ state.uLevel = 1; state.round = 0; }
   if (v === 'home') $('#q').value = state.q;
   renderChips(); draw();
 }
@@ -165,6 +240,7 @@ async function draw(){
     if (state.view === 'home') return drawHome(m);
     if (state.view === 'agent') return drawAgent(m);
     if (state.view === 'memory') return drawMemory(m);
+    if (state.view === 'usage') return drawUsage(m);
     if (state.view === 'tools') return drawTools(m);
     if (state.view === 'overview') return drawOverview(m);
   }catch(e){
@@ -195,6 +271,7 @@ async function drawAgent(m){
   const tiles = [
     ['memory','记忆','短期 / 知识库 / 长期', '▤'],
     ['tools','工具','传入 · 返回 · 报错', '⌘'],
+    ['usage','Token','每次问答的消耗', '◈'],
     ['overview','概览','调用量与会话清单', '◎']
   ];
   m.innerHTML = '<div class="grid">' + tiles.map(([v,n,d,g]) =>
@@ -203,7 +280,7 @@ async function drawAgent(m){
     + `<div class="empty" id="a-ov" style="padding:16px 8px">读取统计…</div>`;
   try{
     const ov = (await api('/api/debug/overview')).data || {};
-    $('#a-ov').textContent = `当前统计：${ov.tool_calls ?? 0} 调用 / ${ov.long_entries ?? 0} 长期条目`;
+    $('#a-ov').textContent = `当前统计：${ov.tool_calls ?? 0} 调用 / ${ov.long_entries ?? 0} 长期条目 / ${ov.tokens_total ?? 0} tokens`;
   }catch(e){ $('#a-ov').textContent = e.message; }
 }
 
@@ -221,40 +298,272 @@ async function drawMemory(m){
   </div>`;
 
   api('/api/debug/short', {q:state.q, limit:20}).then(s => {
-    $('#c-short').textContent = `${s.count||0} 条`;
-    $('#tb-short').innerHTML = (s.items||[]).map(r => `<tr><td class="t">${esc((r.ts||'').slice(5,16))}</td>
+    memData.short = s.items || [];
+    $('#c-short').textContent = `${s.count||0} 条 · 点击看全文`;
+    $('#tb-short').innerHTML = memData.short.map((r, i) => `<tr data-i="${i}">
+        <td class="t">${esc((r.ts||'').slice(5,16))}</td>
         <td class="c"><span class="role">${esc(r.role)}</span> ${esc(clip(r.content, 80))}</td></tr>`).join('')
         || '<tr><td colspan="2" class="empty">暂无</td></tr>';
+    $('#tb-short').onclick = ev => {
+      const tr = ev.target.closest('tr[data-i]');
+      if (!tr) return;
+      const r = memData.short[+tr.dataset.i] || {};
+      openModal('短期记忆 · ' + (r.role || '消息'), [
+        ['时间', r.ts], ['会话', r.session_id], ['角色', r.role]
+      ], r.content || '（空）');
+    };
   }).catch(e => { $('#tb-short').innerHTML = errRow(2, e); });
 
   api('/api/debug/knowledge', {q:state.q}).then(k => {
-    $('#c-know').textContent = `${k.count||0} 个文件`;
-    $('#tb-know').innerHTML = (k.items||[]).map(r => r.error
+    memData.know = k.items || [];
+    $('#c-know').textContent = `${k.count||0} 个文件 · 点击看内容`;
+    $('#tb-know').innerHTML = memData.know.map((r, i) => r.error
       ? `<tr><td class="n">${esc(r.file)}</td><td class="c err">${esc(r.error)}</td></tr>`
-      : `<tr><td class="n">${esc(r.file)}</td><td class="c">${r.items} 条 · ${r.keys} 组 · ${r.fields} 字段</td></tr>`
+      : `<tr data-i="${i}"><td class="n">${esc(r.file)}</td><td class="c">${r.items} 条 · ${r.keys} 组 · ${r.fields} 字段</td></tr>`
       ).join('') || '<tr><td colspan="2" class="empty">暂无</td></tr>';
+    $('#tb-know').onclick = ev => {
+      const tr = ev.target.closest('tr[data-i]');
+      if (!tr) return;
+      const r = memData.know[+tr.dataset.i] || {};
+      openModal(r.file, [['条目', r.items], ['分组', r.keys], ['字段', r.fields]], '读取中…');
+      api('/api/debug/knowledge_file', {name:r.file}).then(f => {
+        const it = f.item;
+        const txt = it ? JSON.stringify(it, null, 2) : '读取失败或文件不存在';
+        $('#m-body').textContent = txt.length > 20000 ? txt.slice(0, 20000) + '\n…（已截断显示）' : txt;
+      }).catch(e => { $('#m-body').textContent = '读取失败：' + e.message; });
+    };
   }).catch(e => { $('#tb-know').innerHTML = errRow(2, e); });
 
   api('/api/debug/long', {q:state.q, limit:20}).then(l => {
-    $('#c-long').textContent = `${l.count||0} 条`;
-    $('#tb-long').innerHTML = (l.items||[]).map(r => `<tr><td class="t">${esc((r.ts||'').slice(5,16))}</td>
+    memData.long = l.items || [];
+    $('#c-long').textContent = `${l.count||0} 条 · 点击看全文`;
+    $('#tb-long').innerHTML = memData.long.map((r, i) => `<tr data-i="${i}">
+        <td class="t">${esc((r.ts||'').slice(5,16))}</td>
         <td class="c"><span class="role">${esc((r.tags||[]).join('/') || '条目')}</span> ${esc(clip(r.text, 80))}</td></tr>`
-        ).join('') || '<tr><td colspan="2" class="empty">暂无</td></tr>';
+      ).join('') || '<tr><td colspan="2" class="empty">暂无</td></tr>';
+    $('#tb-long').onclick = ev => {
+      const tr = ev.target.closest('tr[data-i]');
+      if (!tr) return;
+      const r = memData.long[+tr.dataset.i] || {};
+      openModal('长期记忆', [
+        ['时间', r.ts], ['标签', (r.tags || []).join(' / ')], ['会话', r.session_id]
+      ], r.text || '（空）');
+    };
   }).catch(e => { $('#tb-long').innerHTML = errRow(2, e); });
 
   api('/api/debug/memory_tools', {q:state.q, limit:20}).then(r => {
     const calls = r.items || [], av = r.available || [];
+    memData.tools = calls.length
+      ? calls.map(c => ({...c, kind:'call'}))
+      : av.map(a => ({...a, kind:'avail'}));
     $('#c-mtool').textContent = `${calls.length} 次 · ${av.length} 个工具`;
-    const rows = calls.length
-      ? calls.map(c => `<tr><td class="t">${esc((c.ts||'').slice(5,16))}</td>
+    $('#tb-mtool').innerHTML = memData.tools.map((c, i) => c.kind === 'call'
+      ? `<tr data-i="${i}"><td class="t">${esc((c.ts||'').slice(5,16))}</td>
           <td class="c"><span class="badge ${c.ok?'ok':'bad'}">${c.ok?'OK':'ERR'}</span> <b>${esc(c.name)}</b>
           <br><span class="role">传入</span> ${esc(clip(c.args, 70))}
-          <br><span class="role">返回</span> ${esc(clip(c.result, 110))}</td></tr>`).join('')
-      : av.map(a => `<tr><td class="t">可用</td><td class="c"><b>${esc(a.name)}</b>
-          <br><span class="role">参数</span> (${esc(a.params)})
-          <br><span class="role">说明</span> ${esc(a.description)}</td></tr>`).join('');
-    $('#tb-mtool').innerHTML = rows || '<tr><td colspan="2" class="empty">暂无</td></tr>';
+          <br><span class="role">返回</span> ${esc(clip(c.result, 110))}</td></tr>`
+      : `<tr data-i="${i}"><td class="t">可用</td><td class="c"><b>${esc(c.name)}</b>
+          <br><span class="role">参数</span> (${esc(c.params)})
+          <br><span class="role">说明</span> ${esc(c.description)}</td></tr>`
+      ).join('') || '<tr><td colspan="2" class="empty">暂无</td></tr>';
+    $('#tb-mtool').onclick = ev => {
+      const tr = ev.target.closest('tr[data-i]');
+      if (!tr) return;
+      const c = memData.tools[+tr.dataset.i] || {};
+      if (c.kind === 'call'){
+        openModal('记忆工具 · ' + c.name, [
+          ['时间', c.ts], ['状态', c.ok ? 'OK' : 'ERR'], ['会话', c.session]
+        ], `入参\n${c.args || '—'}\n\n返回\n${c.result || '—'}`);
+      } else {
+        openModal('记忆工具 · ' + c.name, [
+          ['角色', (c.roles || []).join(' / ')], ['参数', '(' + (c.params || '') + ')']
+        ], c.description || '（无说明）');
+      }
+    };
   }).catch(e => { $('#tb-mtool').innerHTML = errRow(2, e); });
+}
+
+/* ---------------- Token 三级查看：总对话 → 分对话 → 请求细节 ---------------- */
+function goUsage(level){
+  state.uLevel = level;
+  if (level === 1) state.round = 0;
+  const tail = level === 2 ? ' / 分对话' : (level === 3 ? ` / 分对话 #${state.round}` : '');
+  $('#crumb').innerHTML = `检修台 / <b>智能体 · Token${tail}</b>`;
+  draw();
+}
+
+async function drawUsage(m){
+  if (state.uLevel === 3) return drawUsageCall(m);
+  if (state.uLevel === 2) return drawUsageCalls(m);
+  return drawUsageTurns(m);
+}
+
+/* 一级：总对话（一次用户/上游提问 = 一行） */
+async function drawUsageTurns(m){
+  m.innerHTML = `<div class="kv" id="kv-tok">
+      <div><b>—</b><s>总对话</s></div><div><b>—</b><s>模型请求</s></div><div><b>—</b><s>输入 token</s></div>
+      <div><b>—</b><s>输出 token</s></div><div><b>—</b><s>合计 token</s></div><div><b>—</b><s>缓存命中</s></div>
+      <div><b>—</b><s>估算</s></div>
+    </div>
+    <section class="sec" style="margin-top:14px"><h2>总对话 <em id="c-turn"></em></h2>
+      <table>${head('时间','智能体 / 模型','输入 · 输出 · 合计','请求 / 总耗时','用户提问')}<tbody id="tb-turn">${loadingRow(5)}</tbody></table></section>`;
+  try{
+    const r = await api('/api/debug/usage', {q:state.q, limit:40});
+    const d = r.data || {};
+    $('#kv-tok').innerHTML =
+      `<div><b>${d.calls??0}</b><s>总对话</s></div><div><b>${d.requests??0}</b><s>模型请求</s></div>` +
+      `<div><b>${d.prompt_tokens??0}</b><s>输入 token</s></div><div><b>${d.completion_tokens??0}</b><s>输出 token</s></div>` +
+      `<div><b>${d.total_tokens??0}</b><s>合计 token</s></div><div><b>${d.cached_tokens??0}</b><s>缓存命中</s></div>` +
+      `<div class="${d.estimated_calls?'e':''}"><b>${d.estimated_calls??0}</b><s>估算次数</s></div>`;
+    const turns = r.items || [];
+    $('#c-turn').textContent = `${turns.length} 条 · 点击查看分对话`;
+    if (!turns.length){
+      $('#tb-turn').innerHTML = '<tr><td colspan="5" class="empty">还没有对话记录<br>去对话里问一句再来</td></tr>';
+      return;
+    }
+    $('#tb-turn').innerHTML = turns.map(t => `<tr data-ts="${esc(t.ts)}">
+        <td class="t">${esc((t.ts||'').slice(5,16))}</td>
+        <td class="n">${esc(t.agent)}<br><span class="role">${esc(t.model)}</span></td>
+        <td class="c">${t.prompt_tokens} · ${t.completion_tokens} · <b>${t.total_tokens}</b>${
+          t.estimated?'<br><span class="badge bad">估算</span>':''}${
+          t.cached_tokens?`<br><span class="role">缓存 ${t.cached_tokens}</span>`:''}</td>
+        <td class="n">${t.requests||t.rounds} 次<br><span class="role">${Math.round((t.latency_ms||0)/1000)}s</span></td>
+        <td class="c">${esc(clip(t.question, 46))}</td>
+      </tr>`).join('');
+    $('#tb-turn').onclick = ev => {
+      const tr = ev.target.closest('tr[data-ts]');
+      if (!tr) return;
+      state.turn = tr.dataset.ts;
+      goUsage(2);
+    };
+  }catch(e){ $('#tb-turn').innerHTML = errRow(5, e); }
+}
+
+/* 二级：分对话（该次提问里每一次模型请求 = 一行） */
+async function drawUsageCalls(m){
+  m.innerHTML = `<nav class="lv"><button class="back2" onclick="goUsage(1)">‹ 总对话</button>
+      <span id="lv-info">读取中…</span></nav>
+    <div class="kv" id="kv-turn"></div>
+    <section class="sec" style="margin-top:12px"><h2>分对话 <em id="c-sub"></em></h2>
+      <table>${head('智能体','轮次','模型','耗时','输入 · 输出 · 合计','工具 / 问题')}<tbody id="tb-sub">${loadingRow(6)}</tbody></table></section>`;
+  try{
+    const [r, agents] = await Promise.all([
+      api('/api/debug/usage', {q:state.q, limit:40}),
+      loadAgentMeta()
+    ]);
+    const t = (r.items || []).find(x => x.ts === state.turn);
+    if (!t){
+      $('#lv-info').textContent = state.turn || '未选择对话';
+      $('#tb-sub').innerHTML = '<tr><td colspan="6" class="empty">记录不在当前列表里，可能被搜索条件过滤</td></tr>';
+      return;
+    }
+    const a = agents[t.agent] || {};
+    $('#lv-info').textContent = `${t.ts} · ${t.agent} · ${t.question || '—'}`;
+    const calls = t.calls || [];
+    const issues = calls.reduce((a, c) => a + (c.error_count || 0), 0);
+    $('#kv-turn').innerHTML =
+      `<div><b>${calls.length || t.requests || 0}</b><s>模型请求</s></div>` +
+      `<div><b>${t.prompt_tokens}</b><s>输入 token</s></div><div><b>${t.completion_tokens}</b><s>输出 token</s></div>` +
+      `<div><b>${t.total_tokens}</b><s>合计 token</s></div>` +
+      `<div><b>${Math.round((t.latency_ms||0)/1000)}s</b><s>总耗时</s></div>` +
+      `<div class="${issues?'e':''}"><b>${issues}</b><s>问题 / 报错</s></div>`;
+    $('#c-sub').textContent = `${calls.length} 次请求 · 点击查看细节`;
+    $('#tb-sub').innerHTML = calls.map(c => `<tr data-ts="${c.round}">
+        <td class="n">${esc(a.name || t.agent || '—')}<br><span class="role">${esc(t.agent || '')}</span></td>
+        <td class="t">#${c.round}</td>
+        <td class="n">${esc(c.model || t.model)}</td>
+        <td class="n">${((c.latency_ms||0)/1000).toFixed(1)}s</td>
+        <td class="c">${c.prompt_tokens} · ${c.completion_tokens} · <b>${c.total_tokens}</b>${
+          c.estimated?' <span class="badge bad">估算</span>':''}</td>
+        <td class="c">${c.tool_count ?? 0} 个工具${
+          c.error_count ? ` <span class="badge bad">${c.error_count} 问题</span>` : ' <span class="badge ok">正常</span>'}</td>
+      </tr>`).join('') || '<tr><td colspan="6" class="empty">该轮没有分请求记录（旧数据）</td></tr>';
+    $('#tb-sub').onclick = ev => {
+      const tr = ev.target.closest('tr[data-ts]');
+      if (!tr) return;
+      state.round = parseInt(tr.dataset.ts, 10) || 0;
+      goUsage(3);
+    };
+  }catch(e){ $('#tb-sub').innerHTML = errRow(5, e); }
+}
+
+/* 三级：单次请求细节（工具、耗时、内容、token、报错） */
+async function drawUsageCall(m){
+  m.innerHTML = `<nav class="lv"><button class="back2" onclick="goUsage(2)">‹ 分对话</button>
+      <span id="lv-info">读取中…</span></nav>
+    <div class="kv" id="kv-call"></div>
+    <section class="sec" style="margin-top:12px"><h2>处理智能体 <em id="c-agent"></em></h2><div id="box-agent"></div></section>
+    <section class="sec"><h2>问题与报错 <em id="c-iss"></em></h2><div class="iss" id="box-iss"></div></section>
+    <section class="sec"><h2>工具调用 <em id="c-tool"></em></h2>
+      <table>${head('工具 / 接口 / 说明','耗时','状态','入参 / 返回')}<tbody id="tb-tool">${loadingRow(4)}</tbody></table></section>
+    <section class="sec"><h2>模型输入 <em id="c-in"></em></h2>
+      <div class="role" style="margin-bottom:5px">该智能体本次收到的完整消息（system 提示词 + 上下文 + 对话 + 工具观察）</div>
+      <pre class="box" id="inp">读取中…</pre></section>
+    <section class="sec"><h2>模型输出 <em id="c-out"></em></h2>
+      <div class="role" style="margin-bottom:5px">该智能体本次的原样输出（JSON 动作或最终回答）</div>
+      <pre class="box" id="out">读取中…</pre></section>`;
+  try{
+    const [r, meta, agents] = await Promise.all([
+      api('/api/debug/usage_call', {ts:state.turn, rnd:state.round}),
+      loadToolMeta(),
+      loadAgentMeta()
+    ]);
+    const it = r.item;
+    if (!it){
+      $('#lv-info').textContent = '记录不存在';
+      $('#tb-tool').innerHTML = '<tr><td colspan="4" class="empty">该请求没有细节记录</td></tr>';
+      $('#inp').textContent = '—';
+      $('#out').textContent = '—';
+      return;
+    }
+    const t = it.turn || {}, c = it.call || {};
+    const a = agents[t.agent] || {};
+    $('#lv-info').textContent = `${t.ts || ''} · ${t.agent || ''} · ${t.question || ''}`;
+    $('#c-agent').textContent = a.name ? `${a.role} · ${a.name}` : (t.agent || '未知智能体');
+    $('#box-agent').innerHTML =
+      `<div class="agdesc">${esc(a.description || '注册表中没有这个智能体的描述（可能是旧记录或未登记角色）')}</div>` +
+      (a.tools && a.tools.length
+        ? `<table>${head('暴露给模型的接口','说明')}<tbody>${
+            a.tools.map(x => `<tr><td class="n">${esc(x.signature)}</td><td class="c">${esc(x.description)}</td></tr>`).join('')
+          }</tbody></table>`
+        : '<div class="empty">该智能体不调用工具</div>');
+    $('#kv-call').innerHTML =
+      `<div><b>#${c.round ?? '?'}</b><s>轮次</s></div><div><b>${Math.round((c.latency_ms||0)/1000)}s</b><s>请求耗时</s></div>` +
+      `<div><b>${c.prompt_tokens ?? 0}</b><s>输入 token</s></div><div><b>${c.completion_tokens ?? 0}</b><s>输出 token</s></div>` +
+      `<div><b>${c.total_tokens ?? 0}</b><s>合计 token</s></div><div><b>${c.cached_tokens ?? 0}</b><s>缓存命中</s></div>` +
+      `<div class="${c.estimated?'e':''}"><b>${c.estimated?'是':'否'}</b><s>字符估算</s></div>`;
+    const issues = (c.issues || []).slice();
+    if (t.error) issues.push(`本轮整体失败：${t.error}`);
+    $('#c-iss').textContent = issues.length ? `${issues.length} 项` : '';
+    $('#box-iss').innerHTML = issues.length
+      ? issues.map(x => `<div>${esc(x)}</div>`).join('')
+      : '<div class="none">本次请求没有报错或异常</div>';
+    const tools = c.tools || [];
+    $('#c-tool').textContent = tools.length ? `${tools.length} 次` : '未调用';
+    $('#tb-tool').innerHTML = tools.map(x => {
+      const meta1 = meta[x.name] || {};
+      return `<tr>
+        <td class="c"><b>${esc(x.name)}</b>
+          <br><span class="role">接口</span> ${esc(meta1.signature || x.name + '(…)')}
+          <br><span class="role">说明</span> ${esc(meta1.description || '未在注册表中找到（可能是旧记录或已下线）')}</td>
+        <td class="n">${x.ms ?? 0}ms</td>
+        <td class="n"><span class="badge ${x.ok?'ok':'bad'}">${x.ok?'OK':'ERR'}</span></td>
+        <td class="c"><span class="role">入参</span> ${esc(clip(JSON.stringify(x.args ?? {}), 180))}
+          <br><span class="role">返回</span> ${esc(clip(x.result || '—', 260))}${
+          x.error ? `<br><span class="badge bad">报错</span> ${esc(x.error)}` : ''}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="4" class="empty">这一轮模型没有调用工具（可能是直接作答）</td></tr>';
+    $('#c-in').textContent = (c.prompt_chars ? `累计 ${c.prompt_chars} 字符` : '')
+      + (c.prompt_truncated ? ' · 已截断 20000 字' : '');
+    $('#inp').textContent = c.prompt_full
+      || `（旧记录未保存完整输入，仅显示最后一条消息）\n\n${c.prompt_tail || '—'}`;
+    $('#c-out').textContent = c.content ? `${c.content.length} 字符` : '';
+    $('#out').textContent = c.content || '（模型没有输出内容）';
+  }catch(e){
+    $('#tb-tool').innerHTML = errRow(4, e);
+    $('#box-iss').innerHTML = `<div>${esc(e.message)}</div>`;
+    $('#out').textContent = '读取失败';
+  }
 }
 
 async function drawTools(m){
@@ -297,9 +606,16 @@ async function drawOverview(m){
 
 $('#q').addEventListener('input', e => {
   clearTimeout(timer);
-  timer = setTimeout(() => { state.q = e.target.value.trim(); draw(); }, 220);
+  timer = setTimeout(() => {
+    state.q = e.target.value.trim();
+    state.uLevel = 1; state.round = 0;
+    draw();
+  }, 220);
 });
-$('#back').onclick = () => setView(state.view === 'agent' || state.view === 'home' ? 'home' : 'agent');
+$('#back').onclick = () => {
+  if (state.view === 'usage' && state.uLevel > 1) return goUsage(state.uLevel - 1);
+  setView(state.view === 'agent' || state.view === 'home' ? 'home' : 'agent');
+};
 setView('home');
 </script>
 </body>

@@ -54,6 +54,7 @@ class ReActAgentBase:
                     tools=self.tools(),
                     execute=lambda name, args: self._execute_tool(name, args, sid),
                     context_text=context_text,
+                    session_id=sid,
                 )
                 answer = result.get("answer", "")
                 trace = result.get("trace", [])

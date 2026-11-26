@@ -32,4 +32,9 @@ def tool(name: str, args, ok: bool, result, **data) -> dict:
     )
 
 
-__all__ = ["log", "think", "tool"]
+def usage(**data) -> dict:
+    """一次问答的 token 消耗（多轮 ReAct 已累加）。"""
+    return log("usage", **data)
+
+
+__all__ = ["log", "think", "tool", "usage"]

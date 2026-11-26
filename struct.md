@@ -18,6 +18,7 @@
 ```
 config.py                        唯一配置入口：路径、模型、权限、预算、业务基线（旺季/尾程/代理费）
 server.py                        FastAPI 入口：REST 接口、静态页、配置读写、上传、遥测 tail
+start_server.ps1                 常驻启动脚本：后台拉起 8000 服务（-Stop 停止 / -Install 登录自启 / -Uninstall 取消）
 logistics_agent/
 ├─ core/                         「与业务无关」的骨架层（可迁移到其它领域）
 │  ├─ toolkit/decorator.py       @register 装饰器 + 进程内 REGISTRY（名称/说明/角色/func）
@@ -33,11 +34,14 @@ logistics_agent/
 │  ├─ constraint/validator.py    参数递归校验：URL 域名白名单、路径根限制
 │  ├─ constraint/rules.py        DEAD_RULES：禁止编造运价/税率、禁止承诺时效、禁止协助低报
 │  ├─ reflection/               reflect()：回答与 trace 的一致性/风险自检
-│  ├─ telemetry/live.py         工具/思考/错误事件 → data/telemetry/live.jsonl
+│  ├─ telemetry/live.py         工具/思考/错误/一次问答 token 事件 → data/telemetry/live.jsonl
+│  ├─ telemetry/tokens.py       token 计量：read_usage(接口 usage) / estimate(字符估算)
 │  └─ output/formatter.py       统一返回体 build(answer, trace, agent) / error()
 ├─ memory/                       短期（会话轮次 JSONL）+ 长期（偏好/事实 KB）+ JSONL 落盘
-├─ tools/                        领域能力（12 个工具，见 §4）
+├─ tools/                        领域能力（16 个工具，见 §4）
 │  ├─ knowledge.py               HS 查询、税则查表、目的国信息、compute_duty、required_docs
+│  ├─ consolidator.py            国内集货/头程货代：名录检索 find_consolidator、官网公开页 site_profile
+│  ├─ web.py                     通用抓取：fetch_page 单页、crawl 同域小规模爬取（robots + 公网校验）
 │  ├─ clearance.py               estimate()/estimate_clearance()、口岸拥堵、缺失单证与风险
 │  ├─ rates.py                   计费重/W-M/整柜选型、附加费、税费、归一评分、推荐
 │  ├─ shipment.py                plan_shipment()、时间线、export_quote()、quote_stats()
@@ -51,9 +55,12 @@ logistics_agent/
 │  ├─ clearance_agent.py         清关时效（区间 + 分解 + 缺失单证 + 风险）
 │  ├─ compliance_agent.py        HS / 税率 / 认证 / 单证
 │  └─ summarizer.py              统计与复盘（读落盘报价，不依赖 LLM）
-data/knowledge/                  countries.json / hs_codes.json / carriers.json / ports.json
+data/knowledge/                  countries.json / hs_codes.json / carriers.json / ports.json / consolidators.json
 data/quotes/quote_log.csv        报价落盘（导出即写一行）
 ui/                              index.html + app.js + style.css（原生，无构建链）
+debug_kit/                       检修台（DEBUG_TOOLKIT=1 才挂载）：reader 读盘 / router /api/debug/* / ui/debug.html
+                                 · Token 三级查看：总对话 → 分对话 → 单次请求细节（工具/耗时/内容/token/报错）
+                                 · 记忆页四栏（短期/知识库/长期/记忆工具）行点击弹层看全文；知识库走 /api/debug/knowledge_file
 ```
 
 ## 3. 一次请求的生命周期
@@ -86,6 +93,10 @@ ui/                              index.html + app.js + style.css（原生，无�
 | `shipment.plan_shipment` | ✓ |  |  |  | 端到端方案 |
 | `shipment.export_quote` | ✓ | ✓ |  |  | **写操作**，需 `confirm=true` |
 | `shipment.quote_stats` | ✓ | ✓ |  |  | 历史报价统计 |
+| `consolidator.find_consolidator` | ✓ | ✓ |  |  | 国内集货/头程货代名录检索 |
+| `consolidator.site_profile` | ✓ | ✓ |  |  | 读名录内官网公开页（标题/简介/摘要） |
+| `web.fetch_page` | ✓ | ✓ |  | ✓ | 抓公网公开页（标题/简介/正文/链接） |
+| `web.crawl` | ✓ | ✓ |  |  | 同域爬取（≤5 页，可关键词定位） |
 
 写操作集合：`WRITE_TOOLS = DANGEROUS_WRITE = {"shipment.export_quote"}`；
 `AGENT_PERMISSION_MODE=plan` 时必须 `confirm=true`，`readonly` 一律拒绝。

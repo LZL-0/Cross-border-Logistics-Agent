@@ -10,10 +10,14 @@
 import inspect
 import json
 import re
+import time
 
 from config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, LLM_TIMEOUT, REACT_MAX_ROUNDS
+from logistics_agent.core.telemetry import live
+from logistics_agent.core.telemetry.tokens import estimate, read_usage
 
 _JSON_RE = re.compile(r"\{.*\}", re.S)
+_PROMPT_LIMIT = 20000  # 单次请求保存的输入全文上限（字符），超出截断
 
 _SYSTEM_TMPL = """你是「跨境物流引擎」的智能体，角色：{role}。
 只做跨境运输方案、清关时效、税费与比价相关的分析与计算，不编造运价与税率。
@@ -66,6 +70,13 @@ def _parse_json(text: str) -> dict | None:
             return None
 
 
+def _render_prompt(messages: list[dict]) -> str:
+    """把发给模型的消息按角色渲染成可读全文，供检修台查看模型输入。"""
+    return "\n\n".join(
+        f"【{m.get('role', '?')}】\n{m.get('content') or ''}" for m in messages
+    )
+
+
 def run(
     role: str,
     user_text: str,
@@ -73,6 +84,7 @@ def run(
     execute,
     context_text: str = "",
     system_extra: str = "",
+    session_id: str = "",
 ) -> dict:
     """执行 ReAct 循环；execute(name, args) 返回 (ok, payload)。"""
     from openai import OpenAI  # 延迟导入：未装 openai 只影响此路径
@@ -97,28 +109,117 @@ def run(
     ]
     trace: list[dict] = []
     observations: list[str] = []
+    started = time.time()
+    stats = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0, "estimated": False}
+    calls: list[dict] = []  # 分对话：这一轮里每一次请求的消耗与耗时
+
+    def _finish(answer: str, error: str = "") -> dict:
+        """写一条问答级 token 记录，再返回原有结构。"""
+        live.usage(
+            agent=role,
+            session=session_id,
+            model=LLM_MODEL,
+            rounds=stats["calls"],
+            requests=len(calls),
+            calls=calls,
+            prompt_tokens=stats["prompt_tokens"],
+            completion_tokens=stats["completion_tokens"],
+            total_tokens=stats["prompt_tokens"] + stats["completion_tokens"],
+            cached_tokens=stats["cached_tokens"],
+            estimated=stats["estimated"],
+            latency_ms=int((time.time() - started) * 1000),
+            question=str(user_text)[:120],
+            answer_chars=len(str(answer)),
+            error=error,
+        )
+        return {"answer": answer, "trace": trace}
 
     for round_no in range(1, max(1, REACT_MAX_ROUNDS) + 1):
-        resp = client.chat.completions.create(
-            model=LLM_MODEL,
-            messages=messages,
-            temperature=0.2,
-        )
+        call_started = time.time()
+        prompt_text = _render_prompt(messages)
+        try:
+            resp = client.chat.completions.create(
+                model=LLM_MODEL,
+                messages=messages,
+                temperature=0.2,
+            )
+        except Exception as exc:  # noqa: BLE001  请求失败也要留一条分对话
+            calls.append(
+                {
+                    "round": round_no,
+                    "model": LLM_MODEL,
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "cached_tokens": 0,
+                    "total_tokens": 0,
+                    "latency_ms": int((time.time() - call_started) * 1000),
+                    "estimated": False,
+                    "output": "error",
+                    "prompt_chars": len(prompt_text),
+                    "prompt_full": prompt_text[:_PROMPT_LIMIT],
+                    "prompt_truncated": len(prompt_text) > _PROMPT_LIMIT,
+                    "prompt_tail": str(messages[-1].get("content") or "")[:600],
+                    "content": "",
+                    "tools": [],
+                    "issues": [f"模型请求失败：{type(exc).__name__}: {str(exc)[:200]}"],
+                }
+            )
+            _finish("", error=f"{type(exc).__name__}: {str(exc)[:200]}")
+            raise
+        call_ms = int((time.time() - call_started) * 1000)
         content = (resp.choices[0].message.content or "").strip()
         data = _parse_json(content)
 
+        # token 计量：优先用接口返回的 usage，缺失时按字符估算并标记
+        used = read_usage(resp)
+        stats["calls"] += 1
+        if used["estimated"]:
+            stats["estimated"] = True
+            used["prompt_tokens"] = estimate("\n".join(str(m.get("content") or "") for m in messages))
+            used["completion_tokens"] = estimate(content)
+        stats["prompt_tokens"] += used["prompt_tokens"]
+        stats["completion_tokens"] += used["completion_tokens"]
+        stats["cached_tokens"] += used["cached_tokens"]
+        call = {
+            "round": round_no,
+            "model": getattr(resp, "model", "") or LLM_MODEL,
+            "prompt_tokens": used["prompt_tokens"],
+            "completion_tokens": used["completion_tokens"],
+            "cached_tokens": used["cached_tokens"],
+            "total_tokens": used["prompt_tokens"] + used["completion_tokens"],
+            "latency_ms": call_ms,
+            "estimated": bool(used["estimated"]),
+            "output": "final" if data and "final" in data else ("action" if data else "raw"),
+            "prompt_chars": len(prompt_text),
+            "prompt_full": prompt_text[:_PROMPT_LIMIT],
+            "prompt_truncated": len(prompt_text) > _PROMPT_LIMIT,
+            "prompt_tail": str(messages[-1].get("content") or "")[:600],
+            "content": content[:2000],
+            "tools": [],
+            "issues": [],
+        }
+        if used["estimated"]:
+            call["issues"].append("接口未返回 usage，token 按字符估算")
         if not data:
-            return {"answer": content or "模型没有返回可解析内容", "trace": trace}
+            call["issues"].append("模型输出无法解析为 JSON")
+        calls.append(call)
+
+        if not data:
+            return _finish(content or "模型没有返回可解析内容")
 
         if "final" in data:
-            return {"answer": str(data.get("final") or ""), "trace": trace}
+            return _finish(str(data.get("final") or ""))
 
         action = str(data.get("action") or "").strip()
         args = data.get("args") or {}
         if not isinstance(args, dict):
             args = {}
 
+        if action not in tools:
+            call["issues"].append(f"调用了未注册的工具：{action or '（空）'}")
+        tool_started = time.time()
         ok, payload = execute(action, args)
+        tool_ms = int((time.time() - tool_started) * 1000)
         try:
             payload_text = json.dumps(payload, ensure_ascii=False, default=str)
         except TypeError:
@@ -132,6 +233,20 @@ def run(
                 "result": payload_text[:1200],
             }
         )
+        err_text = ""
+        if not ok:
+            err_text = str(payload.get("error") if isinstance(payload, dict) else payload)[:600]
+            call["issues"].append(f"工具 {action or '（空）'} 失败：{err_text}")
+        call["tools"].append(
+            {
+                "name": action,
+                "args": args,
+                "ok": ok,
+                "ms": tool_ms,
+                "result": payload_text[:1200],
+                "error": err_text,
+            }
+        )
         observation = f"工具 {action} 返回：{payload_text[:1500]}"
         observations.append(observation)
 
@@ -139,7 +254,7 @@ def run(
         messages.append({"role": "user", "content": f"观察结果：{observation}\n请继续。"})
 
     answer = "已达到最大工具调用轮数，以下为已获得的观察结果：\n" + "\n".join(observations)
-    return {"answer": answer, "trace": trace}
+    return _finish(answer)
 
 
 __all__ = ["run"]

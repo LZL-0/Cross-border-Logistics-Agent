@@ -1,0 +1,98 @@
+{
+  "_meta": {
+    "note": "国内集货 / 头程货代基础名录。覆盖范围以企业官网公开信息与公开资料整理，仅作检索入口；运价、时效、揽收范围以官网当期公告为准。",
+    "source": "企业官网公开页面 + 公开资料",
+    "updated": "2026-11-25",
+    "currency": "CNY"
+  },
+  "companies": [
+    {
+      "id": "4px",
+      "name": "递四方（4PX）",
+      "city": "深圳",
+      "type": "跨境综合物流 / 集货仓",
+      "services": ["国内集货", "头程干线", "海外仓", "专线小包"],
+      "lanes": ["US", "GB", "DE", "AU", "JP"],
+      "pickup_cities": ["深圳", "广州", "东莞", "义乌", "上海", "厦门"],
+      "website": "https://www.4px.com",
+      "notes": "国内多仓集货，支持一件代发、整柜与拼箱；适合中小卖家拼货出运"
+    },
+    {
+      "id": "yunexpress",
+      "name": "云途物流",
+      "city": "深圳",
+      "type": "跨境专线 / 集货",
+      "services": ["国内集货", "专线小包", "头程"],
+      "lanes": ["US", "GB", "DE", "FR", "AU", "JP"],
+      "pickup_cities": ["深圳", "广州", "义乌"],
+      "website": "https://www.yunexpress.cn",
+      "notes": "轻小件专线为主，国内揽收后集中分拨；价格友好，时效中档"
+    },
+    {
+      "id": "yanwen",
+      "name": "燕文物流",
+      "city": "上海",
+      "type": "跨境小包 / 集货",
+      "services": ["国内集货", "小包挂号", "头程"],
+      "lanes": ["US", "GB", "DE", "FR", "AU", "JP"],
+      "pickup_cities": ["上海", "深圳", "义乌"],
+      "website": "https://www.yanwen.com",
+      "notes": "老牌跨境小包，国内集货后走邮政与专线渠道"
+    },
+    {
+      "id": "zongteng",
+      "name": "纵腾集团",
+      "city": "深圳",
+      "type": "跨境物流集团 / 海外仓",
+      "services": ["国内集货", "头程干线", "海外仓"],
+      "lanes": ["US", "GB", "DE", "FR", "JP", "AU"],
+      "pickup_cities": ["深圳", "广州", "义乌", "厦门"],
+      "website": "https://www.zongteng.com",
+      "notes": "集货 + 头程 + 海外仓一体，适合有备货需求的中大卖家"
+    },
+    {
+      "id": "goodcang",
+      "name": "谷仓海外仓（GoodCang）",
+      "city": "深圳",
+      "type": "海外仓 / 头程集货",
+      "services": ["国内集货", "头程", "海外仓"],
+      "lanes": ["US", "GB", "DE", "FR", "CA", "AU", "JP"],
+      "pickup_cities": ["深圳", "广州", "东莞", "义乌"],
+      "website": "https://www.goodcang.com",
+      "notes": "以海外仓为核心，国内集货后走海运/空运头程入仓"
+    },
+    {
+      "id": "winit",
+      "name": "万邑通（WINIT）",
+      "city": "上海",
+      "type": "跨境物流 / 海外仓",
+      "services": ["国内集货", "头程", "海外仓"],
+      "lanes": ["US", "GB", "DE", "AU", "CA"],
+      "pickup_cities": ["上海", "深圳", "义乌"],
+      "website": "https://www.winit.com.cn",
+      "notes": "海外仓 + 头程一体，支持国内集货入仓与退件处理"
+    },
+    {
+      "id": "forest",
+      "name": "大森林全球物流",
+      "city": "深圳",
+      "type": "头程集货 / 清关",
+      "services": ["国内集货", "海运头程", "空运头程", "清关"],
+      "lanes": ["US", "GB", "DE", "FR", "CA", "AU", "JP"],
+      "pickup_cities": ["深圳", "广州", "宁波", "上海", "义乌"],
+      "website": "https://www.forestshipping.com",
+      "notes": "头程与清关为主，适合整柜/拼箱集货后直送海外仓"
+    },
+    {
+      "id": "sinotrans",
+      "name": "中国外运（Sinotrans）",
+      "city": "北京",
+      "type": "综合物流 / 国际货代",
+      "services": ["国内集货", "海运整柜", "海运拼箱", "空运", "铁路"],
+      "lanes": ["US", "GB", "DE", "NL", "FR", "JP", "SG", "AU"],
+      "pickup_cities": ["全国主要口岸与枢纽城市"],
+      "website": "https://www.sinotrans.com",
+      "notes": "央企综合货代，口岸资源全，适合大宗集货与多式联运"
+    }
+  ]
+}
